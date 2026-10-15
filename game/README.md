@@ -3,7 +3,7 @@
 Milestone 3: first playable match loop (Ants only). Milk aphids for honeydew,
 train workers and soldiers at your colony (cap 50 ants), fight in melee, and win
 by destroying the enemy colony. Play offline against a simple local bot, or
-online against another phone through a server that owns every rule.
+online against another PC through a server that owns every rule.
 LAN or localhost only: no matchmaking, accounts or internet hosting yet.
 
 ## Match rules (placeholder balance, tune from playtests)
@@ -25,19 +25,22 @@ LAN or localhost only: no matchmaking, accounts or internet hosting yet.
   equal health is a draw.
 - Online, the match clock starts when both players have joined.
 
+Platform: **PC first** (Linux and Windows). Mobile is deferred, not dropped: the
+project keeps the Mobile renderer so it can export to phones later.
+
 ## Open and run
 
 1. Godot 4.7, **Import** `game/project.godot`.
-2. Press **F5**. Mouse stands in for touch in the editor.
+2. Press **F5**. Current mouse controls are listed below.
 3. Pick **Play offline**, **Host game**, or type an address and **Join**.
 
-## Play online (two phones, same Wi-Fi)
+## Play online (two PCs, same LAN)
 
-1. Phone A: **Host game**. Its HUD shows "join at 192.168.x.x".
-2. Phone B: type that address, **Join**.
+1. PC A: **Host game**. Its HUD shows "join at 192.168.x.x".
+2. PC B: type that address, **Join**.
 Each player controls only their own ants (red = player 1, slate = player 2).
 
-Or run a dedicated server on a PC and have both phones join the PC's address:
+Or run a dedicated server on a PC and have both clients join the PC's address:
 
 ```
 cd game
@@ -48,7 +51,10 @@ Uses UDP port 7777. A firewall on the host must allow it.
 
 ## Controls
 
-| Action | Touch | Mouse (editor) |
+Current controls are touch-first with mouse equivalents. Standard PC RTS controls
+(left-drag box select, right-click move, WASD/edge scroll) are the next change.
+
+| Action | Touch | Mouse |
 |---|---|---|
 | Select one ant | Tap it | Left click |
 | Move selection | Tap ground | Left click ground |
@@ -60,13 +66,10 @@ Uses UDP port 7777. A firewall on the host must allow it.
 | Zoom | Pinch | Wheel |
 | Select all / clear | **All** / **Clear** buttons | same |
 
-## Android build
+## PC build
 
-1. Editor Settings > Export > Android: set the Android SDK path and a debug keystore.
-2. Project > Install Android Build Template.
-3. Project > Export > Add **Android**, tick arm64-v8a, tick **Permissions > Internet**
-   (needed for online play), then **Export Project** or use the
-   one-click deploy button with a phone plugged in (USB debugging on).
+1. Editor > Manage Export Templates > **Download and Install**.
+2. Project > Export > Add **Linux** (and/or **Windows Desktop**), then **Export Project**.
 
 ## Layout
 
@@ -98,6 +101,8 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Networking model
 
+Protocol v3 combines match commands with token-based rejoin, rate limits, and host notices. Older clients must update.
+
 - **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
   point, optional target id) and `TRAIN` (kind). The server runs SimWorld, whose
   `issue_order` / `issue_train` check ownership, honeydew, queue, unit cap and
@@ -114,7 +119,7 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
   lost packet. No extrapolation: if snapshots stop, ants hold still.
 - **Join.** `HELLO` carries a protocol version and a random install token.
   Mismatched versions and strangers (when both slots are taken) are rejected with
-  a reason. A slot belongs to the first token that took it; the same phone can
+  a reason. A slot belongs to the first token that took it; the same client token can
   rejoin it at once, even before its old connection times out.
 - **Dead links.** ENet peer timeout is 5 s (default 30). Clients show
   "Connection unstable" after 1.5 s without snapshots, and "Host paused" when
@@ -122,18 +127,14 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Known limits
 
-- Online: tap-to-move shows the marker at once, but ants start moving about
-  100 ms + one-way latency later (no client-side prediction yet). Measure on phones
-  before deciding whether prediction is needed.
-- Online: no player identity, so anyone on the network can take a free slot.
-  LAN only; don't expose the port to the internet.
-- Online: full snapshots every tick, ~24 KB/s per client at the cap. Delta-compress
-  if phones on mobile data struggle. Both players' honeydew is visible to both clients.
-- Match loop balance is placeholder. The bot is simple (fixed build, waves of 6).
-- No surrender button or reconnect-by-identity yet.
-- Not yet tested on real phones or a real Wi-Fi network; CI covers localhost UDP only.
-- Movement is straight-line plus overlap push. No pathfinding or obstacles yet (Milestone 2).
-- Overlap and target search use a 2 m grid. CI (desktop) measured ~1 ms per tick
-  for a bot match and ~3 ms average, ~19 ms worst for a 50 v 50 soldier battle.
-  Phones will be slower and are not yet measured.
-- Not yet measured on a phone.
+- This is an unfinished Ants-only prototype, not the complete RTS.
+- Controls still use touch-first mouse equivalents. Standard PC RTS controls are a follow-up, not implemented by this merge.
+- No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
+- Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
+- No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.
+- Tokens protect reserved slots but are not account authentication. Desktop tokens currently live for one client instance; restarting the app cannot recover its old slot. LAN only; do not expose this server publicly.
+- The match continues after a disconnect. No surrender or reconnect UI yet.
+- Hosting shares the render loop; long stalls drop simulation time (logged). A dedicated server avoids rendering contention.
+- Full snapshots expose both players' economy. No hidden-information security is claimed.
+- Balance and bot behavior are placeholders. Visuals, real-LAN reliability, Windows exports, and minimum-PC performance still need hands-on testing.
+- Headless tests cover simulation, match rules, scene wiring, and loopback UDP. Simulation timings are not rendered frame-rate measurements.
