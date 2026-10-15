@@ -44,14 +44,23 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
-		_held.clear()
+		# The button release may happen outside the window and never arrive.
+		_reset_input()
 
 
 ## Disabling (menu open) drops held keys and any drag in progress.
 func set_enabled(on: bool) -> void:
 	set_process_unhandled_input(on)
 	set_process(on)
+	_reset_input()
+
+
+func _reset_input() -> void:
 	_held.clear()
+	_reset_pointer()
+
+
+func _reset_pointer() -> void:
 	if _boxing:
 		box_changed.emit(Rect2())
 	_left_down = false
@@ -161,6 +170,9 @@ func _on_motion(e: InputEventMouseMotion) -> void:
 	if e.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
 		pan.emit(e.position - e.relative, e.position)
 	if not _left_down:
+		return
+	if not (e.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		_reset_pointer()  # Missed the release; drop the drag.
 		return
 	if not _boxing and e.position.distance_to(_start) > DRAG_SLOP:
 		_boxing = true
