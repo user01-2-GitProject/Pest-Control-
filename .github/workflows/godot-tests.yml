@@ -1,0 +1,62 @@
+name: Godot tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  GODOT_VERSION: "4.7"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: game
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot
+        run: |
+          curl -fsSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          godot --version
+
+      - name: Import project
+        run: |
+          godot --headless --import 2>&1 | tee import.log
+          ! grep -E "SCRIPT ERROR|Parse Error|ERROR:" import.log
+
+      - name: Sim tests
+        run: godot --headless -s res://tests/test_sim.gd
+
+      - name: Match loop tests (economy, production, combat, victory, bot match, 50v50)
+        run: godot --headless -s res://tests/test_match.gd
+
+      - name: Main scene smoke test
+        run: |
+          godot --headless -s res://tests/smoke_main.gd 2>&1 | tee smoke.log
+          grep -q "smoke_main: passed" smoke.log
+          ! grep -E "SCRIPT ERROR|Parse Error" smoke.log
+
+      - name: Network tests (protocol, jitter buffer, in-process match)
+        run: godot --headless -s res://tests/test_net.gd
+
+      - name: Online match, separate processes (server + 2 clients over UDP)
+        run: |
+          godot --headless -s res://src/net/server_main.gd -- --port 7777 --quit-after 90 > server.log 2>&1 &
+          SERVER=$!
+          godot --headless -s res://tests/net_bot.gd -- --port 7777 > bot1.log 2>&1 &
+          BOT1=$!
+          godot --headless -s res://tests/net_bot.gd -- --port 7777 > bot2.log 2>&1 &
+          BOT2=$!
+          R1=0; R2=0
+          wait $BOT1 || R1=$?
+          wait $BOT2 || R2=$?
+          kill $SERVER 2>/dev/null || true
+          cat server.log bot1.log bot2.log
+          if grep -E "SCRIPT ERROR|Parse Error" server.log bot1.log bot2.log; then exit 1; fi
+          test $R1 -eq 0 && test $R2 -eq 0
