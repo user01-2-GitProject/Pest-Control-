@@ -27,14 +27,16 @@ func _run() -> void:
 		if main.selection.size() != 20:
 			printerr("FAIL: select all")
 			failures += 1
-		if not main.command_move(Vector2(10, 10)):
-			printerr("FAIL: move command rejected")
-			failures += 1
+		var start_pos: Vector2 = main.sim.units[0].pos
 		var start_tick: int = main.sim.tick
+		main.command_move(Vector2(10, 10))
 		for i in 30:
 			await process_frame
 		if main.sim.tick <= start_tick:
 			printerr("FAIL: sim did not tick")
+			failures += 1
+		elif main.sim.units[0].pos.distance_to(start_pos) < 0.1:
+			printerr("FAIL: queued move did not move units")
 			failures += 1
 
 	print("smoke_main: %s" % ("FAILED (%d)" % failures if failures else "passed"))

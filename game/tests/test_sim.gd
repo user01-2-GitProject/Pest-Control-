@@ -13,6 +13,9 @@ func _initialize() -> void:
 	_test_group_move_ends_without_overlap()
 	_test_rejects_unowned_units()
 	_test_rejects_unknown_units()
+	_test_rejects_non_finite_target()
+	_test_rejects_oversized_command()
+	_test_queued_command_applies_next_tick()
 	_test_target_clamped_to_map()
 	_test_crowd_into_corner_settles()
 	print("test_sim: %s" % ("FAILED (%d)" % _failures if _failures else "all passed"))
@@ -85,6 +88,40 @@ func _test_rejects_unknown_units() -> void:
 	var sim := Sim.new()
 	_check(not sim.issue_move(1, [999], Vector2.ZERO), "unknown id rejected")
 	_check(not sim.issue_move(1, [], Vector2.ZERO), "empty selection rejected")
+
+
+func _test_rejects_non_finite_target() -> void:
+	var sim := Sim.new()
+	var u = sim.spawn_unit(1, Vector2.ZERO)
+	_check(not sim.issue_move(1, [u.id], Vector2(NAN, 0)), "NaN target rejected")
+	_check(not sim.issue_move(1, [u.id], Vector2(0, INF)), "INF target rejected")
+	_run(sim, 5)
+	_check(u.pos.is_finite() and not u.moving, "unit unaffected by bad target")
+
+
+func _test_rejects_oversized_command() -> void:
+	var sim := Sim.new()
+	var u = sim.spawn_unit(1, Vector2.ZERO)
+	var ids: Array = []
+	for i in Sim.MAX_UNITS_PER_PLAYER + 1:
+		ids.append(u.id)
+	_check(not sim.issue_move(1, ids, Vector2(5, 5)), "over-long id list rejected")
+
+
+func _test_queued_command_applies_next_tick() -> void:
+	var sim := Sim.new()
+	var mine = sim.spawn_unit(1, Vector2.ZERO)
+	var theirs = sim.spawn_unit(2, Vector2(5, 0))
+	sim.queue_move(1, [mine.id], Vector2(10, 0))
+	sim.queue_move(1, [theirs.id], Vector2(10, 0))
+	_check(not mine.moving, "queued command not applied before step")
+	sim.step()
+	_check(sim.last_results.size() == 2, "two results reported")
+	_check(sim.last_results[0].ok and not sim.last_results[1].ok, "accept + reject reported")
+	_check(sim.last_results[0].tick == sim.tick, "result stamped with tick")
+	_check(mine.moving and not theirs.moving, "only the valid command applied")
+	sim.step()
+	_check(sim.last_results.is_empty(), "results cleared next tick")
 
 
 func _test_target_clamped_to_map() -> void:

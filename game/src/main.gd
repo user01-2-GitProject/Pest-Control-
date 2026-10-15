@@ -19,6 +19,8 @@ var selection: Dictionary = {}  # unit id -> true
 var _views: Dictionary = {}  # unit id -> UnitView
 var _units_root: Node3D
 var _acc := 0.0
+var _snapshot: Array[Dictionary] = []
+var _stats_timer := 0.0
 
 
 func _ready() -> void:
@@ -60,17 +62,29 @@ func _process(delta: float) -> void:
 	var ticks := 0
 	while _acc >= SimWorld.DT and ticks < MAX_TICKS_PER_FRAME:
 		sim.step()
+		_on_step_results()
 		_acc -= SimWorld.DT
 		ticks += 1
 	if ticks == MAX_TICKS_PER_FRAME:
 		_acc = 0.0  # Don't spiral after a long stall (app resume, debugger).
+	if ticks > 0:
+		_snapshot = sim.snapshot()
 
 	var alpha := _acc / SimWorld.DT
-	for u in sim.units:
-		_views[u.id].sync(u, alpha, delta)
+	for s in _snapshot:
+		_views[s.id].sync(s, alpha, delta)
 
-	hud.set_stats("FPS %d   Ants %d   Selected %d" % [
-		Engine.get_frames_per_second(), sim.units.size(), selection.size()])
+	_stats_timer -= delta
+	if _stats_timer <= 0.0:
+		_stats_timer = 0.25
+		hud.set_stats("FPS %d   Ants %d   Selected %d" % [
+			Engine.get_frames_per_second(), _snapshot.size(), selection.size()])
+
+
+func _on_step_results() -> void:
+	for r in sim.last_results:
+		if r.player == LOCAL_PLAYER and not r.ok:
+			hud.toast("Can't move those units")
 
 
 func _spawn_start_units() -> void:
@@ -81,8 +95,10 @@ func _spawn_start_units() -> void:
 		var v := UnitView.new()
 		v.unit_id = u.id
 		_units_root.add_child(v)
-		v.sync(u, 1.0, 1.0)
 		_views[u.id] = v
+	_snapshot = sim.snapshot()
+	for s in _snapshot:
+		_views[s.id].sync(s, 1.0, 1.0)
 
 
 func _on_tapped(screen_pos: Vector2) -> void:
@@ -100,48 +116,46 @@ func _on_tapped(screen_pos: Vector2) -> void:
 
 func _on_box_finished(rect: Rect2) -> void:
 	var ids: Array = []
-	for u in sim.units:
-		if u.owner != LOCAL_PLAYER:
+	for s in _snapshot:
+		if s.owner != LOCAL_PLAYER:
 			continue
-		var sp: Variant = rig.world_to_screen(Vector3(u.pos.x, 0.2, u.pos.y))
+		var sp: Variant = rig.world_to_screen(Vector3(s.pos.x, 0.2, s.pos.y))
 		if sp != null and rect.has_point(sp):
-			ids.append(u.id)
+			ids.append(s.id)
 	_set_selection(ids)
 
 
-func command_move(target: Vector2) -> bool:
-	var ok := sim.issue_move(LOCAL_PLAYER, selection.keys(), target)
-	if ok:
-		var marker := MoveMarker.new()
-		add_child(marker)
-		marker.position = Vector3(target.x, 0.05, target.y)
-	else:
-		hud.toast("Can't move those units")
-	return ok
+## Sends the move to the sim, which applies it on the next tick. The marker is
+## shown immediately; a rejection comes back via _on_step_results.
+func command_move(target: Vector2) -> void:
+	sim.queue_move(LOCAL_PLAYER, selection.keys(), target)
+	var marker := MoveMarker.new()
+	add_child(marker)
+	marker.position = Vector3(target.x, 0.05, target.y)
 
 
 ## Nearest own unit within PICK_RADIUS_PX of a screen point, or -1.
 func pick_unit(screen_pos: Vector2) -> int:
 	var best := -1
 	var best_d := PICK_RADIUS_PX
-	for u in sim.units:
-		if u.owner != LOCAL_PLAYER:
+	for s in _snapshot:
+		if s.owner != LOCAL_PLAYER:
 			continue
-		var sp: Variant = rig.world_to_screen(Vector3(u.pos.x, 0.2, u.pos.y))
+		var sp: Variant = rig.world_to_screen(Vector3(s.pos.x, 0.2, s.pos.y))
 		if sp == null:
 			continue
 		var d: float = screen_pos.distance_to(sp)
 		if d < best_d:
 			best_d = d
-			best = u.id
+			best = s.id
 	return best
 
 
 func _select_all() -> void:
 	var ids: Array = []
-	for u in sim.units:
-		if u.owner == LOCAL_PLAYER:
-			ids.append(u.id)
+	for s in _snapshot:
+		if s.owner == LOCAL_PLAYER:
+			ids.append(s.id)
 	_set_selection(ids)
 
 

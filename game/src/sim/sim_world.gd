@@ -3,20 +3,24 @@ extends RefCounted
 ## Authoritative game state and rules.
 ##
 ## No nodes, rendering or input live here, so a dedicated server can run this
-## class unchanged later. Clients only send commands (issue_move) and read state.
+## class unchanged later. Clients queue commands (queue_move); step() applies
+## them at the start of the next tick, and views read snapshot() only.
 ## Positions are 2D on the ground plane: x maps to world X, y maps to world Z.
 
 const TICK_RATE := 20
 const DT := 1.0 / TICK_RATE
 
+const MAX_UNITS_PER_PLAYER := 50
 const UNIT_RADIUS := 0.5
 const UNIT_SPEED := 4.0
 const FORMATION_GAP := 0.25
 const OVERLAP_PASSES := 3
-## A moving unit that gains less than this per tick for STALL_TICKS gives up,
-## so crowds settle instead of pushing forever.
+## A moving unit that gains less than this per tick for STALL_TICKS gives up
+## and accepts where it is, so crowds settle instead of pushing forever.
 const STALL_EPSILON := 0.02
 const STALL_TICKS := 20
+## An idle unit shoved further than this from its slot walks back to it.
+const RETURN_DISTANCE := 0.6
 
 
 class Unit:
@@ -36,8 +40,13 @@ class Unit:
 var tick: int = 0
 var map_half_size: Vector2
 var units: Array[Unit] = []
+## Results of commands applied during the last step():
+## [{ "player", "tick", "ok" }]. Online this becomes the accept/reject reply.
+var last_results: Array[Dictionary] = []
+
 var _by_id: Dictionary = {}
 var _next_id: int = 1
+var _pending: Array[Dictionary] = []
 
 
 func _init(half_size: Vector2 = Vector2(30, 30)) -> void:
@@ -63,20 +72,42 @@ func get_unit(id: int) -> Unit:
 	return _by_id.get(id)
 
 
+## Queues a move to apply at the start of the next tick. This is the only
+## entry point for player input, local or (later) from the network.
+func queue_move(player: int, unit_ids: Array, target: Vector2) -> void:
+	_pending.append({"player": player, "ids": unit_ids.duplicate(), "target": target})
+
+
+## Plain per-unit state for views: they never touch Unit directly, so the
+## same view code can later draw server snapshots.
+func snapshot() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for u in units:
+		out.append({"id": u.id, "owner": u.owner, "pos": u.pos,
+			"prev_pos": u.prev_pos, "facing": u.facing})
+	return out
+
+
 ## Validates and applies a move command. Returns false (and changes nothing)
-## if any unit is unknown or not owned by `player`.
+## if the target is not finite, the list is empty or too long, or any unit is
+## unknown or not owned by `player`.
 func issue_move(player: int, unit_ids: Array, target: Vector2) -> bool:
+	if not target.is_finite():
+		return false
+	if unit_ids.is_empty() or unit_ids.size() > MAX_UNITS_PER_PLAYER:
+		return false
+	var seen := {}
 	var group: Array[Unit] = []
 	for id in unit_ids:
 		var u: Unit = _by_id.get(id)
 		if u == null or u.owner != player:
 			return false
-		if not group.has(u):
+		if not seen.has(u.id):
+			seen[u.id] = true
 			group.append(u)
-	if group.is_empty():
-		return false
 
-	var slots := formation_slots(clamp_to_map(target), group.size())
+	target = clamp_to_map(target)
+	var slots := formation_slots(target, group.size())
 	# Closest units claim their nearest free slot first.
 	group.sort_custom(func(a: Unit, b: Unit) -> bool:
 		return a.pos.distance_squared_to(target) < b.pos.distance_squared_to(target))
@@ -87,9 +118,7 @@ func issue_move(player: int, unit_ids: Array, target: Vector2) -> bool:
 				best = i
 		u.target = slots[best]
 		slots.remove_at(best)
-		u.moving = true
-		u.best_dist = u.pos.distance_to(u.target)
-		u.stall = 0
+		_start_moving(u)
 	return true
 
 
@@ -113,8 +142,12 @@ func formation_slots(center: Vector2, count: int) -> Array[Vector2]:
 
 func step() -> void:
 	tick += 1
+	_apply_pending()
+
 	for u in units:
 		u.prev_pos = u.pos
+		if not u.moving and u.pos.distance_to(u.target) > RETURN_DISTANCE:
+			_start_moving(u)
 		if not u.moving:
 			continue
 		var to := u.target - u.pos
@@ -135,6 +168,21 @@ func step() -> void:
 			_update_stall(u)
 
 
+func _apply_pending() -> void:
+	last_results.clear()
+	var cmds := _pending
+	_pending = []
+	for c in cmds:
+		var ok := issue_move(c.player, c.ids, c.target)
+		last_results.append({"player": c.player, "tick": tick, "ok": ok})
+
+
+func _start_moving(u: Unit) -> void:
+	u.moving = true
+	u.best_dist = u.pos.distance_to(u.target)
+	u.stall = 0
+
+
 func _update_stall(u: Unit) -> void:
 	var d := u.pos.distance_to(u.target)
 	if d < u.best_dist - STALL_EPSILON:
@@ -144,6 +192,7 @@ func _update_stall(u: Unit) -> void:
 		u.stall += 1
 		if u.stall >= STALL_TICKS:
 			u.moving = false
+			u.target = u.pos  # Accept this spot so it doesn't retry forever.
 
 
 ## Pushes overlapping units apart. O(n^2) is fine for the prototype's 20 units;

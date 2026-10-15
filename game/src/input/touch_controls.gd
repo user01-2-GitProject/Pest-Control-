@@ -79,7 +79,8 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 	_touches.erase(e.index)
 	match _mode:
 		Mode.PENDING:
-			if _touches.is_empty() and not e.canceled:
+			# Releasing after the hold ring appeared cancels: no accidental move.
+			if _touches.is_empty() and not e.canceled and not _armed:
 				tapped.emit(e.position)
 		Mode.BOX:
 			box_changed.emit(Rect2())
