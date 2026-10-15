@@ -147,12 +147,26 @@ func _check_pc_controls(main: Node) -> int:
 	if main.rig.position.distance_to(Vector3(25, 0, 25)) < 1.0:
 		printerr("FAIL: double-tapping 1 should center the camera on the group")
 		fails += 1
-	# Space centers on our colony.
-	main.rig.position = Vector3(25, 0, 25)
+	# Holding Space and moving the mouse drags the camera; release stops it.
+	main.rig.position = Vector3(0, 0, 0)
+	var mid: Vector2 = main.get_viewport().get_visible_rect().size * 0.5
 	pc._unhandled_input(_key(KEY_SPACE, true))
+	pc._unhandled_input(_move(mid + Vector2(-120, 0), Vector2(-120, 0)))
+	var panned_x: float = main.rig.position.x
+	if panned_x <= 0.5:
+		printerr("FAIL: Space + mouse left should pan the camera right (x=%f)" % panned_x)
+		fails += 1
+	pc._unhandled_input(_key(KEY_SPACE, false))
+	pc._unhandled_input(_move(mid, Vector2(120, 0)))
+	if absf(main.rig.position.x - panned_x) > 0.01:
+		printerr("FAIL: mouse motion after releasing Space should not pan")
+		fails += 1
+	# Backspace centers on our colony.
+	main.rig.position = Vector3(25, 0, 25)
+	pc._unhandled_input(_key(KEY_BACKSPACE, true))
 	var col: Vector2 = main.sim.colonies[main.local_player].pos
 	if Vector2(main.rig.position.x, main.rig.position.z).distance_to(col) > 0.5:
-		printerr("FAIL: Space should center the camera on our colony")
+		printerr("FAIL: Backspace should center the camera on our colony")
 		fails += 1
 	# Q trains a worker.
 	var queued: int = main.sim.colonies[main.local_player].queue.size()
@@ -243,6 +257,13 @@ func _drag(pos: Vector2, mask: int) -> InputEventMouseMotion:
 	var e := InputEventMouseMotion.new()
 	e.position = pos
 	e.button_mask = mask
+	return e
+
+
+func _move(pos: Vector2, relative: Vector2) -> InputEventMouseMotion:
+	var e := InputEventMouseMotion.new()
+	e.position = pos
+	e.relative = relative
 	return e
 
 
