@@ -1,5 +1,7 @@
 # Working together on Pest Control
 
+Read and update [COORDINATION.md](COORDINATION.md) for active work, file ownership, handoffs, and the change journal. Check current GitHub state before relying on an entry.
+
 ## Shared approach
 
 We are finding a practical way to build this game together. These responsibilities help work move smoothly; they are not a hierarchy.

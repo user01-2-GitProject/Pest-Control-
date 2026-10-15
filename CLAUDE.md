@@ -1,5 +1,7 @@
 # Claude project guidance
 
+Read and update [COORDINATION.md](COORDINATION.md) for active work, file ownership, handoffs, and the change journal. Check current GitHub state before relying on an entry.
+
 Read [README.md](README.md) for the current game scope and milestone, then [COLLABORATION.md](COLLABORATION.md) for the shared working agreement.
 
 Claude leads core engineering. Codex leads visuals and PR/code review, and contributes scoped implementation. Work as peers, with Jimmy steering the game.
