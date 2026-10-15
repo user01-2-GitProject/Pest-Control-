@@ -9,7 +9,8 @@ extends RefCounted
 ##   HELLO     c->s  magic u32, version u16, token u64 (random per install)
 ##   WELCOME   s->c  player u8, tick u32, tick_rate u8, map_half x f32, y f32
 ##   REJECT    s->c  reason u8
-##   ORDER     c->s  seq u32, target x f32, y f32, target_id u16, count u8, ids u16 * count
+##   ORDER     c->s  seq u32, target x f32, y f32, target_id u16, mode u8
+##                   (SimWorld.MODE_*), count u8, ids u16 * count
 ##   RESULT    s->c  seq u32, ok u8, tick u32
 ##   SNAPSHOT  s->c  tick u32, players u8 (bitmask of connected slots), winner u8,
 ##                   started u8, then for player 1 and 2: honeydew u16, ants u8,
@@ -28,7 +29,7 @@ extends RefCounted
 
 const MAGIC := 0x54534550  # "PEST"
 ## Bump on any wire change. Server rejects clients with a different version.
-const VERSION := 4
+const VERSION := 5
 const DEFAULT_PORT := 7777
 
 const HELLO := 1
@@ -81,14 +82,16 @@ static func reject(reason: int) -> PackedByteArray:
 
 ## Returns an empty array if the command can't be encoded (too many ids, or an
 ## id outside u16). Callers treat that as rejected locally.
-static func order(seq: int, ids: Array, target: Vector2, target_id: int = 0) -> PackedByteArray:
-	if ids.size() > MAX_ORDER_IDS or target_id < 0 or target_id > 0xFFFF:
+static func order(seq: int, ids: Array, target: Vector2, target_id: int = 0,
+		mode: int = 0) -> PackedByteArray:
+	if ids.size() > MAX_ORDER_IDS or target_id < 0 or target_id > 0xFFFF or mode < 0 or mode > 0xFF:
 		return PackedByteArray()
 	var b := _buf(ORDER)
 	b.put_u32(seq)
 	b.put_float(target.x)
 	b.put_float(target.y)
 	b.put_u16(target_id)
+	b.put_u8(mode)
 	b.put_u8(ids.size())
 	for id in ids:
 		if int(id) < 0 or int(id) > 0xFFFF:
@@ -207,18 +210,20 @@ static func decode(data: PackedByteArray) -> Dictionary:
 				return {}
 			return {"type": NOTICE, "code": b.get_u8()}
 		ORDER:
-			if n < 16:
+			if n < 17:
 				return {}
 			var seq := b.get_u32()
 			var target := Vector2(b.get_float(), b.get_float())
 			var target_id := b.get_u16()
+			var mode := b.get_u8()
 			var count := b.get_u8()
-			if n != 16 + count * 2:
+			if n != 17 + count * 2:
 				return {}
 			var ids: Array = []
 			for i in count:
 				ids.append(b.get_u16())
-			return {"type": ORDER, "seq": seq, "target": target, "target_id": target_id, "ids": ids}
+			return {"type": ORDER, "seq": seq, "target": target, "target_id": target_id,
+				"mode": mode, "ids": ids}
 		RALLY:
 			if n != 15:
 				return {}

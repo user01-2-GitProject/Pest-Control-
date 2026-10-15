@@ -176,8 +176,65 @@ func _check_pc_controls(main: Node) -> int:
 		printerr("FAIL: Q should train a worker")
 		fails += 1
 	fails += await _check_rally(main)
+	fails += await _check_unit_orders(main)
 	main._set_selection([])
 	return fails
+
+
+## A then left click attack-moves; Esc / right click cancel targeting; S stops;
+## H holds.
+func _check_unit_orders(main: Node) -> int:
+	var fails := 0
+	var pc: PcControls = main.pc
+	main._select_all()
+	var count: int = main.selection.size()
+	pc._unhandled_input(_key(KEY_A, true))
+	if not pc.targeting:
+		printerr("FAIL: A with ants selected should start targeting")
+		return fails + 1
+	pc._unhandled_input(_key(KEY_ESCAPE, true))
+	if pc.targeting or main.selection.size() != count:
+		printerr("FAIL: Esc should cancel targeting and keep the selection")
+		fails += 1
+	pc._unhandled_input(_key(KEY_A, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, Vector2(10, 10), true))
+	if pc.targeting:
+		printerr("FAIL: right click should cancel targeting")
+		fails += 1
+	var col: Vector2 = main.sim.colonies[main.local_player].pos
+	var spot := col + Vector2(8, 0)
+	var sp: Vector2 = main.rig.world_to_screen(Vector3(spot.x, 0.0, spot.y))
+	var markers := _count_markers(main)
+	pc._unhandled_input(_key(KEY_A, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, sp, false))
+	if pc.targeting or _count_markers(main) != markers + 1 or main.selection.size() != count:
+		printerr("FAIL: A + left click should place one attack-move and keep the selection")
+		fails += 1
+	var ids: Array = main.selection.keys()
+	if not await _wait(func() -> bool: return _any_unit(main, ids, func(u: SimWorld.Unit) -> bool: return u.amove), 3.0):
+		printerr("FAIL: A + left click should attack-move the selection")
+		fails += 1
+	pc._unhandled_input(_key(KEY_S, true))
+	if not await _wait(func() -> bool:
+			return not _any_unit(main, ids, func(u: SimWorld.Unit) -> bool: return u.amove or u.moving), 3.0):
+		printerr("FAIL: S should stop the selection")
+		fails += 1
+	pc._unhandled_input(_key(KEY_H, true))
+	if not await _wait(func() -> bool:
+			return not _any_unit(main, ids, func(u: SimWorld.Unit) -> bool: return not u.hold_ground), 3.0):
+		printerr("FAIL: H should put the selection on hold")
+		fails += 1
+	return fails
+
+
+## True if any live unit in `ids` matches `pred`.
+func _any_unit(main: Node, ids: Array, pred: Callable) -> bool:
+	for id in ids:
+		var u: SimWorld.Unit = main.sim.get_unit(id)
+		if u != null and pred.call(u):
+			return true
+	return false
 
 
 ## Click the mound, right-click the ground: the rally point is set and its

@@ -63,6 +63,13 @@ const GRID_CELL := 2.0
 
 enum Task { NONE, GATHER, ATTACK }
 
+## Order modes. These values go on the wire.
+const MODE_NORMAL := 0  ## move / attack / milk, by target
+const MODE_ATTACK_MOVE := 1  ## walk to the point, fighting anything met on the way
+const MODE_STOP := 2  ## drop everything and stand still
+const MODE_HOLD := 3  ## stay here; hit only what comes into reach
+const MODE_COUNT := 4
+
 
 class Unit:
 	var id: int
@@ -95,6 +102,11 @@ class Unit:
 	## On an explicit move: don't auto-acquire until it arrives.
 	var hold: bool = false
 	var attacking: bool = false
+	## Attack-move: fights whatever it meets, then carries on to `dest`.
+	var amove: bool = false
+	var dest: Vector2
+	## Hold position: never chases; only hits enemies already in reach.
+	var hold_ground: bool = false
 
 
 class Colony:
@@ -238,9 +250,10 @@ func nearest_aphid(from: Vector2) -> Aphid:
 ## queue_train are the only entry points for player input, local or from the
 ## network. `seq` is echoed back in last_results so a client can match the
 ## reply to its command.
-func queue_order(player: int, unit_ids: Array, target: Vector2, target_id: int = 0, seq: int = 0) -> void:
+func queue_order(player: int, unit_ids: Array, target: Vector2, target_id: int = 0, seq: int = 0,
+		mode: int = MODE_NORMAL) -> void:
 	_pending.append({"what": "order", "player": player, "ids": unit_ids.duplicate(),
-		"target": target, "target_id": target_id, "seq": seq})
+		"target": target, "target_id": target_id, "seq": seq, "mode": mode})
 
 
 func queue_move(player: int, unit_ids: Array, target: Vector2, seq: int = 0) -> void:
@@ -297,8 +310,11 @@ func player_state(player: int) -> Dictionary:
 ##               way to a colony).
 ##   target_id = aphid: workers milk it; others move there.
 ##   otherwise: move in formation to `target`.
-func issue_order(player: int, unit_ids: Array, target: Vector2, target_id: int = 0) -> bool:
-	if winner != 0 or not target.is_finite():
+## `mode` overrides that: attack-move to `target` (target_id ignored), stop,
+## or hold position (target ignored). Unknown modes fail.
+func issue_order(player: int, unit_ids: Array, target: Vector2, target_id: int = 0,
+		mode: int = MODE_NORMAL) -> bool:
+	if winner != 0 or not target.is_finite() or mode < 0 or mode >= MODE_COUNT:
 		return false
 	if unit_ids.is_empty() or unit_ids.size() > MAX_UNITS_PER_PLAYER:
 		return false
@@ -311,6 +327,23 @@ func issue_order(player: int, unit_ids: Array, target: Vector2, target_id: int =
 		if not seen.has(u.id):
 			seen[u.id] = true
 			group.append(u)
+
+	match mode:
+		MODE_ATTACK_MOVE:
+			_formation_move(group, target, true)
+			return true
+		MODE_STOP:
+			for u in group:
+				_clear_task(u)
+				_halt(u)
+			return true
+		MODE_HOLD:
+			for u in group:
+				_clear_task(u)
+				u.moving = false
+				u.target = u.pos  # Walks back here if shoved.
+				u.hold_ground = true
+			return true
 
 	var t: Object = _entities.get(target_id) if target_id != 0 else null
 	if (t is Unit or t is Colony) and t.owner != player:
@@ -407,13 +440,18 @@ func step() -> void:
 		if u.cooldown > 0:
 			u.cooldown -= 1
 		u.attacking = false
-		if u.kind == SOLDIER:
+		if u.kind == SOLDIER or u.amove or u.hold_ground:
 			_acquire(u, grid)
 		var foe := _fight_target(u)
 		if foe:
 			_fight(u, foe)
 		elif u.task == Task.GATHER:
 			_gather(u)
+		elif u.amove and not u.moving:
+			if u.pos.distance_to(u.dest) > RETURN_DISTANCE:
+				_go(u, u.dest)  # Fight over; carry on.
+			else:
+				u.amove = false
 		elif not u.moving and not u.gave_up and u.pos.distance_to(u.target) > RETURN_DISTANCE:
 			_start_moving(u)
 
@@ -452,7 +490,7 @@ func _apply_pending() -> void:
 		elif c.what == "rally":
 			ok = issue_rally(c.player, c.target, c.target_id)
 		else:
-			ok = issue_order(c.player, c.ids, c.target, c.target_id)
+			ok = issue_order(c.player, c.ids, c.target, c.target_id, c.get("mode", MODE_NORMAL))
 		last_results.append({"player": c.player, "seq": c.seq, "tick": tick, "ok": ok, "what": c.what})
 
 
@@ -485,6 +523,8 @@ func _clear_task(u: Unit) -> void:
 	u.milk = 0
 	u.hold = false
 	u.gave_up = false
+	u.amove = false
+	u.hold_ground = false
 
 
 func _start_gather(u: Unit, a: Aphid) -> void:
@@ -495,7 +535,7 @@ func _start_gather(u: Unit, a: Aphid) -> void:
 	u.task_target = a.id
 
 
-func _formation_move(group: Array[Unit], target: Vector2) -> void:
+func _formation_move(group: Array[Unit], target: Vector2, attack_move := false) -> void:
 	target = clamp_to_map(target)
 	var slots := formation_slots(target, group.size())
 	# Closest units claim their nearest free slot first.
@@ -507,7 +547,9 @@ func _formation_move(group: Array[Unit], target: Vector2) -> void:
 			if u.pos.distance_squared_to(slots[i]) < u.pos.distance_squared_to(slots[best]):
 				best = i
 		_clear_task(u)
-		u.hold = true
+		u.hold = not attack_move
+		u.amove = attack_move
+		u.dest = slots[best]
 		u.target = slots[best]
 		slots.remove_at(best)
 		_start_moving(u)
@@ -558,8 +600,9 @@ func _gather(u: Unit) -> void:
 		_go(u, a.pos + dir * (a.radius + u.radius))
 
 
-## Soldiers pick the nearest enemy ant in AGGRO_RANGE when idle, arrived, or
-## marching on a colony; failing that, an enemy colony in range.
+## Soldiers (and any ant on attack-move or hold) pick the nearest enemy ant
+## in AGGRO_RANGE when idle, arrived, or marching on a colony; failing that,
+## an enemy colony in range. Holding ants only look as far as they can hit.
 func _acquire(u: Unit, grid: Dictionary) -> void:
 	if u.engage != 0 or u.hold:
 		return
@@ -573,6 +616,8 @@ func _acquire(u: Unit, grid: Dictionary) -> void:
 		if o.owner == u.owner:
 			continue
 		var d := u.pos.distance_squared_to(o.pos)
+		if u.hold_ground and d > pow(u.radius + o.radius + MELEE_REACH, 2):
+			continue
 		if d < best_d:
 			best_d = d
 			best = o
@@ -582,7 +627,8 @@ func _acquire(u: Unit, grid: Dictionary) -> void:
 	if u.task == Task.NONE:
 		for p in colonies:
 			var c: Colony = colonies[p]
-			if p != u.owner and u.pos.distance_to(c.pos) - c.radius < AGGRO_RANGE:
+			var reach := u.radius + MELEE_REACH if u.hold_ground else AGGRO_RANGE
+			if p != u.owner and u.pos.distance_to(c.pos) - c.radius < reach:
 				u.engage = c.id
 
 
@@ -604,8 +650,14 @@ func _fight_target(u: Unit) -> Object:
 func _fight(u: Unit, foe: Object) -> void:
 	var reach: float = u.radius + foe.radius + MELEE_REACH
 	var to: Vector2 = foe.pos - u.pos
+	if u.hold_ground and to.length() > reach:
+		u.engage = 0  # Out of reach: let it go rather than step off the spot.
+		return
 	if to.length() <= reach:
-		_halt(u)
+		if u.hold_ground:
+			u.moving = false  # Keep its spot as the place to return to.
+		else:
+			_halt(u)
 		u.facing = to.angle()
 		u.attacking = true
 		if u.cooldown == 0:
@@ -668,6 +720,7 @@ func _update_stall(u: Unit) -> void:
 		if u.stall >= STALL_TICKS:
 			u.moving = false
 			u.gave_up = true
+			u.amove = false  # Blocked: stop retrying the attack-move.
 
 
 ## Uniform grid of units, rebuilt each use. Keeps overlap and target queries

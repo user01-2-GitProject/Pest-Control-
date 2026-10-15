@@ -67,6 +67,8 @@ hold then drag to box select, pinch to zoom) for a later mobile build.
 | Train | **Q** worker, **E** soldier, or the **Worker 50** / **Soldier 100** buttons |
 | Control groups | Ctrl+1–9 sets, Shift+1–9 adds, 1–9 selects; tap twice to jump the camera there |
 | Jump to your colony | Backspace |
+| Attack-move | A, then left-click a spot (fights anything on the way) or an enemy. Right-click or Esc cancels |
+| Stop / hold position | S / H |
 | Rally point (new ants go there) | Click your mound, then right-click ground, an aphid or an enemy. Right-click the mound to clear |
 | Pan | Hold Space and move the mouse, mouse at the screen edge, arrow keys, or middle drag |
 | Zoom | Mouse wheel or trackpad pinch |
@@ -106,10 +108,10 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Networking model
 
-Protocol v4 combines match commands (including rally points) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
+Protocol v5 combines match commands (including rally points and order modes) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
 
 - **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
-  point, optional target id), `TRAIN` (kind) and `RALLY` (point, optional
+  point, optional target id, mode: normal / attack-move / stop / hold), `TRAIN` (kind) and `RALLY` (point, optional
   target id). The server runs SimWorld, whose `issue_order` / `issue_train` /
   `issue_rally` check ownership, honeydew, queue, unit cap and match state, and caps each client at 8 commands per tick. Damage, honeydew,
   cooldowns and victory are computed only on the server.
@@ -133,7 +135,7 @@ Protocol v4 combines match commands (including rally points) with token-based re
 ## Known limits
 
 - This is an unfinished Ants-only prototype, not the complete RTS.
-- No attack-move, stop/hold, or minimap yet. W A S D panning is off (Jimmy: W A S D are unit hotkeys, standard RTS layout; pan with Space + mouse or the screen edge) (`PAN_WITH_WASD` in `pc_controls.gd` turns it back on).
+- No minimap or patrol yet. W A S D panning is off (Jimmy: W A S D are unit hotkeys, standard RTS layout; pan with Space + mouse or the screen edge). `PAN_WITH_WASD` in `pc_controls.gd` turns it back on, but then A and S stop working as hotkeys.
 - No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
 - Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
 - No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.

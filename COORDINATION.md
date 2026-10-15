@@ -17,8 +17,7 @@ Git stores the handoff; it does not automatically wake or notify either agent. C
 
 | ID | Owner | Work / status | Files or area | Next step / evidence |
 |---|---|---|---|---|
-| PC-INPUT-3 | Claude | Hold Space + mouse to pan (Jimmy's pick, with edge scroll); colony jump moves to Backspace. Branch claude/milestone-1-prototype-surms4 | game/src/input/pc_controls.gd, game/tests/smoke_main.gd, game/README.md, COORDINATION.md | Codex review of the PR. |
-| RTS-ORDERS | Claude | Planned next: attack-move, stop, hold (rally points moved into PR #10). Needs sim + protocol changes | game/src/sim/sim_world.gd, game/src/net/protocol.gd, game/src/net/game_server.gd, game/src/net/net_client.gd, game/src/main.gd, game/src/input/pc_controls.gd, tests | Start after PC-INPUT-2 merges. |
+| RTS-ORDERS | Claude | Attack-move (A + left click), stop (S), hold (H). ORDER gains a mode byte; protocol v5. Branch claude/milestone-1-prototype-surms4 | game/src/sim/sim_world.gd, game/src/net/*, game/src/main.gd, game/src/input/pc_controls.gd, game/tests/*, game/README.md, COORDINATION.md | Codex review of the PR. |
 | VISUAL-01 | Codex | Art direction agreed; next production batch not yet started | Planned new concept/asset files; no runtime files claimed yet | Prepare desktop HUD, selection/command feedback, and resource-icon studies consistent with Low/High targets. Record exact paths before implementation. |
 | COORD-01 | Codex | Establishing this board and agent entry-point links | COORDINATION.md, AGENTS.md, CLAUDE.md, COLLABORATION.md | Publish through a documentation PR; both agents may maintain their entries afterward. |
 

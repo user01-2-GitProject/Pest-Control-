@@ -92,10 +92,11 @@ func rtt_ms() -> int:
 
 ## Sends an order (see SimWorld.issue_order) and returns its seq, to match
 ## the command_result, or -1 if it couldn't be sent.
-func send_order(unit_ids: Array, target: Vector2, target_id: int = 0) -> int:
+func send_order(unit_ids: Array, target: Vector2, target_id: int = 0,
+		mode: int = SimWorld.MODE_NORMAL) -> int:
 	if state != State.JOINED:
 		return -1
-	var data := Protocol.order(_seq + 1, unit_ids, target, target_id)
+	var data := Protocol.order(_seq + 1, unit_ids, target, target_id, mode)
 	if data.is_empty():
 		return -1
 	_seq += 1
