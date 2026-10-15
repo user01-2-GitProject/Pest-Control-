@@ -1,5 +1,7 @@
 # Pest Control agent guidance
 
+Read and update [COORDINATION.md](COORDINATION.md) for active work, file ownership, handoffs, and the change journal. Check current GitHub state before relying on an entry.
+
 Read [README.md](README.md) for current scope, [COLLABORATION.md](COLLABORATION.md) for responsibilities, and [game/README.md](game/README.md) for the unfinished build and actual controls.
 
 Jimmy steers the game. Claude leads core engineering. Codex leads visual direction, assets, UI, PR review, and code review, and contributes scoped implementation. Work as peers.
