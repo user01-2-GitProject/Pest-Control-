@@ -83,9 +83,9 @@ func _ready() -> void:
 	_train.add_theme_constant_override("separation", 12)
 	_root.add_child(_train)
 	_add_button(_train, "Worker %d" % SimWorld.STATS[SimWorld.WORKER].cost,
-		Callable(func() -> void: train_pressed.emit(SimWorld.WORKER)))
+		Callable(func() -> void: train_pressed.emit(SimWorld.WORKER)), "Q")
 	_add_button(_train, "Soldier %d" % SimWorld.STATS[SimWorld.SOLDIER].cost,
-		Callable(func() -> void: train_pressed.emit(SimWorld.SOLDIER)))
+		Callable(func() -> void: train_pressed.emit(SimWorld.SOLDIER)), "E")
 
 	_result = PanelContainer.new()
 	_root.add_child(_result)
@@ -150,7 +150,8 @@ func is_over_ui(pos: Vector2) -> bool:
 
 
 ## `action` is a Signal or Callable to fire on press.
-func _add_button(parent: Container, text: String, action: Variant) -> void:
+## `hotkey`, if given, is shown small in the button's top-left corner.
+func _add_button(parent: Container, text: String, action: Variant, hotkey := "") -> void:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = Vector2(120, 72)
@@ -160,6 +161,14 @@ func _add_button(parent: Container, text: String, action: Variant) -> void:
 		b.pressed.connect(func() -> void: (action as Signal).emit())
 	else:
 		b.pressed.connect(action)
+	if hotkey != "":
+		var k := Label.new()
+		k.text = hotkey
+		k.add_theme_font_size_override("font_size", 16)
+		k.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
+		k.position = Vector2(6, 2)
+		k.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(k)
 	parent.add_child(b)
 
 
