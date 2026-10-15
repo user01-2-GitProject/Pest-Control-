@@ -3,14 +3,20 @@
 Milestone 1: offline prototype. One flat forest-floor map, 20 placeholder ants,
 high-angle camera, select and move. No online play yet.
 
+Platform: **PC first** (Linux and Windows). Mobile is deferred, not dropped: the
+project keeps the Mobile renderer so it can export to phones later.
+
 ## Open and run
 
 1. Godot 4.7, **Import** `game/project.godot`.
-2. Press **F5**. Mouse stands in for touch in the editor.
+2. Press **F5**.
 
 ## Controls
 
-| Action | Touch | Mouse (editor) |
+Current controls are touch-first with mouse equivalents. Standard PC RTS controls
+(left-drag box select, right-click move, WASD/edge scroll) are the next change.
+
+| Action | Touch | Mouse |
 |---|---|---|
 | Select one ant | Tap it | Left click |
 | Move selection | Tap ground | Left click ground |
@@ -19,12 +25,10 @@ high-angle camera, select and move. No online play yet.
 | Zoom | Pinch | Wheel |
 | Select all / clear | **All** / **Clear** buttons | same |
 
-## Android build
+## PC build
 
-1. Editor Settings > Export > Android: set the Android SDK path and a debug keystore.
-2. Project > Install Android Build Template.
-3. Project > Export > Add **Android**, tick arm64-v8a, then **Export Project** or use the
-   one-click deploy button with a phone plugged in (USB debugging on).
+1. Editor > Manage Export Templates > **Download and Install**.
+2. Project > Export > Add **Linux** (and/or **Windows Desktop**), then **Export Project**.
 
 ## Layout
 
@@ -50,5 +54,5 @@ godot --headless -s res://tests/smoke_main.gd
 
 - Movement is straight-line plus overlap push. No pathfinding or obstacles yet (Milestone 2).
 - Overlap check is O(n²); fine for 20 units, needs a spatial hash before 2 x 50.
-- Ants are 7 meshes each; batch or merge before scaling.
-- Not yet measured on a phone.
+- Ants are one merged mesh each; switch to MultiMesh if draw calls become a problem.
+- Not yet profiled on a minimum-spec PC.
