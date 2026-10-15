@@ -57,14 +57,17 @@ hold then drag to box select, pinch to zoom) for a later mobile build.
 | Action | Mouse / keyboard |
 |---|---|
 | Select one ant | Left click it (Shift+click adds or removes) |
+| Select all of a type on screen | Double click an ant |
 | Box select | Left drag (Shift adds to the selection) |
 | Clear selection | Left click empty ground, or Esc |
 | Select all | Ctrl+A, or the **All** button |
 | Move | Right click ground |
 | Attack | Right click an enemy ant or colony (red ring) |
 | Milk aphids | With workers selected, right click an aphid leaf |
-| Train | **Worker 50** / **Soldier 100** buttons (bottom left) |
-| Pan | W A S D or arrow keys, mouse at the screen edge, or middle drag |
+| Train | **Q** worker, **E** soldier, or the **Worker 50** / **Soldier 100** buttons |
+| Control groups | Ctrl+1–9 sets, Shift+1–9 adds, 1–9 selects; tap twice to jump the camera there |
+| Jump to your colony | Space |
+| Pan | Arrow keys, mouse at the screen edge, or middle drag |
 | Zoom | Mouse wheel or trackpad pinch |
 
 ## PC build
@@ -129,7 +132,7 @@ Protocol v3 combines match commands with token-based rejoin, rate limits, and ho
 ## Known limits
 
 - This is an unfinished Ants-only prototype, not the complete RTS.
-- No control groups, hotkeys for training, or minimap yet.
+- No rally points, attack-move, stop/hold, or minimap yet. W A S D panning is off so those can use letter keys (`PAN_WITH_WASD` in `pc_controls.gd` turns it back on).
 - No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
 - Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
 - No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.

@@ -8,7 +8,7 @@ An unfinished Godot prototype with an Ants-only match loop: gather Honeydew, tra
 
 See [game/README.md](game/README.md) for running the build, current controls, tests, and limitations. Jimmy tested the earlier movement prototype (PR #3). The integrated match loop has headless validation; that does not establish visual polish or complete gameplay.
 
-The game is PC first, with standard RTS mouse-and-keyboard controls (left-drag box select, right-click orders, WASD/edge scroll). Touch input is kept for a later mobile build.
+The game is PC first, with standard RTS mouse-and-keyboard controls (left-drag box select, right-click orders, arrow-key/edge scroll, control groups, hotkeys). Touch input is kept for a later mobile build.
 
 ## Game direction
 

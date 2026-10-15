@@ -11,6 +11,8 @@ enum Mode { MENU, OFFLINE, ONLINE }
 const MAP_HALF := Vector2(30, 30)
 const PICK_RADIUS_PX := 40.0
 const MAX_TICKS_PER_FRAME := 5
+## Second tap of a group key within this many ms centers the camera on it.
+const GROUP_DOUBLE_TAP_MS := 350
 
 var mode := Mode.MENU
 var local_player := 1
@@ -24,6 +26,7 @@ var pc: PcControls
 var hud: Hud
 var menu: Menu
 var selection: Dictionary = {}  # unit id -> true
+var groups: Dictionary = {}  # 1-9 -> Array of unit ids (client-side only)
 
 var _views: Dictionary = {}  # entity id -> UnitView / ColonyView / AphidView
 var _units_root: Node3D
@@ -32,6 +35,8 @@ var _snapshot: Array[Dictionary] = []
 var _stats_timer := 0.0
 ## Online: seq -> "order" / "train", to word rejections.
 var _sent: Dictionary = {}
+var _last_group := 0
+var _last_group_ms := 0
 
 
 func _ready() -> void:
@@ -79,6 +84,9 @@ func _ready() -> void:
 	pc.zoom.connect(func(f: float, c: Vector2) -> void: rig.zoom_at(f, c))
 	pc.select_all.connect(_select_all)
 	pc.clear_selection.connect(func() -> void: _set_selection([]))
+	pc.group_key.connect(_on_group_key)
+	pc.train.connect(command_train)
+	pc.home.connect(_center_on_colony)
 	pc.set_enabled(false)
 
 	menu = Menu.new()
@@ -170,6 +178,8 @@ func _back_to_menu(status: String) -> void:
 ## Drops whatever session is running and shows the menu.
 func _reset() -> void:
 	_set_selection([])
+	groups.clear()
+	_last_group = 0
 	for v in _views.values():
 		v.queue_free()
 	_views.clear()
@@ -386,8 +396,12 @@ func _on_tapped(screen_pos: Vector2) -> void:
 
 ## Mouse left click: select the ant under the cursor (Shift toggles it in the
 ## selection). Empty ground clears the selection unless Shift is held.
-func _on_clicked(screen_pos: Vector2, additive: bool) -> void:
+## A double click selects every own ant of that type on screen.
+func _on_clicked(screen_pos: Vector2, additive: bool, double := false) -> void:
 	var hit := pick_unit(screen_pos)
+	if double and hit != -1:
+		_select_same_kind_on_screen(hit, additive)
+		return
 	if not additive:
 		_set_selection([] if hit == -1 else [hit])
 	elif hit != -1:
@@ -526,6 +540,65 @@ func pick_unit(screen_pos: Vector2) -> int:
 			best_d = d
 			best = s.id
 	return best
+
+
+func _select_same_kind_on_screen(id: int, additive: bool) -> void:
+	var kind := -1
+	for s in _snapshot:
+		if s.id == id:
+			kind = s.get("kind", SimWorld.WORKER)
+	var view := get_viewport().get_visible_rect()
+	var ids: Array = selection.keys() if additive else []
+	for s in _snapshot:
+		if s.owner != local_player or s.get("kind", SimWorld.WORKER) != kind or ids.has(s.id):
+			continue
+		var sp: Variant = rig.world_to_screen(Vector3(s.pos.x, 0.2, s.pos.y))
+		if sp != null and view.has_point(sp):
+			ids.append(s.id)
+	_set_selection(ids)
+
+
+## Ctrl+n stores the selection as group n, Shift+n adds to it, n selects it.
+## Pressing n again quickly centers the camera on the group.
+func _on_group_key(n: int, set_group: bool, add: bool) -> void:
+	if set_group:
+		groups[n] = selection.keys()
+		return
+	if add:
+		var ids: Array = groups.get(n, [])
+		for id in selection:
+			if not ids.has(id):
+				ids.append(id)
+		groups[n] = ids
+		return
+	var alive: Array = []
+	for id in groups.get(n, []):
+		if _views.has(id):
+			alive.append(id)
+	groups[n] = alive
+	var now := Time.get_ticks_msec()
+	var again := n == _last_group and now - _last_group_ms <= GROUP_DOUBLE_TAP_MS
+	_last_group = n
+	_last_group_ms = now
+	if alive.is_empty():
+		return
+	_set_selection(alive)
+	if again:
+		var sum := Vector2.ZERO
+		var count := 0
+		for s in _snapshot:
+			if selection.has(s.id):
+				sum += s.pos
+				count += 1
+		if count > 0:
+			rig.center_on(sum / count)
+
+
+func _center_on_colony() -> void:
+	for s in _snapshot:
+		if s.owner == local_player and int(s.get("kind", 0)) == SimWorld.COLONY:
+			rig.center_on(s.pos)
+			return
 
 
 func _select_all() -> void:
