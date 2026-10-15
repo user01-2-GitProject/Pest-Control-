@@ -13,16 +13,29 @@ signal command_result(seq: int, ok: bool)
 enum State { IDLE, CONNECTING, HANDSHAKE, JOINED, CLOSED }
 
 const CONNECT_TIMEOUT_MS := 6000
+## No snapshot for this long while joined: tell the player the link is shaky.
+const STALL_WARNING_MS := 1500
+## ENet timeout to the server (ms), so a dead host is noticed in ~5 s, not 30.
+const PEER_TIMEOUT_MIN_MS := 2000
+const PEER_TIMEOUT_MAX_MS := 5000
+const TOKEN_PATH := "user://net_token"
 
 var state := State.IDLE
 var player_id := 0
 var players_mask := 0
 var map_half := Vector2.ZERO
 var buffer := SnapshotBuffer.new()
+## Identifies this install to the server so only it can retake its slot.
+## Phones keep one per install; desktop runs get a fresh one each time so
+## two windows on one PC count as two players.
+var token := 0
+## Set by the server's NOTICE when the hosting phone goes to the background.
+var host_paused := false
 
 var _peer: ENetMultiplayerPeer
 var _seq := 0
 var _started_ms := 0
+var _last_snapshot_ms := 0
 
 
 func connect_to(address: String, port: int = Protocol.DEFAULT_PORT) -> Error:
@@ -33,6 +46,9 @@ func connect_to(address: String, port: int = Protocol.DEFAULT_PORT) -> Error:
 		_peer = null
 		return err
 	buffer.clear()
+	host_paused = false
+	if token == 0:
+		token = _load_token()
 	state = State.CONNECTING
 	_started_ms = Time.get_ticks_msec()
 	return OK
@@ -49,6 +65,11 @@ func close() -> void:
 ## True once both player slots are filled on the server.
 func opponent_present() -> bool:
 	return players_mask & 0b11 == 0b11
+
+
+## True when joined but snapshots have stopped arriving for a while.
+func is_stalled() -> bool:
+	return state == State.JOINED and Time.get_ticks_msec() - _last_snapshot_ms > STALL_WARNING_MS
 
 
 ## Round-trip time to the server in ms, or -1 if unknown.
@@ -84,7 +105,10 @@ func poll(delta: float) -> void:
 	if state == State.CONNECTING:
 		if status == MultiplayerPeer.CONNECTION_CONNECTED:
 			state = State.HANDSHAKE
-			_send(Protocol.hello())
+			var server := _peer.get_peer(MultiplayerPeer.TARGET_PEER_SERVER)
+			if server:
+				server.set_timeout(0, PEER_TIMEOUT_MIN_MS, PEER_TIMEOUT_MAX_MS)
+			_send(Protocol.hello(token))
 		elif status == MultiplayerPeer.CONNECTION_DISCONNECTED or _timed_out():
 			_fail("Couldn't reach server")
 			return
@@ -108,6 +132,7 @@ func _handle(msg: Dictionary) -> void:
 			if state != State.HANDSHAKE:
 				return
 			state = State.JOINED
+			_last_snapshot_ms = Time.get_ticks_msec()
 			player_id = msg.player
 			map_half = msg.map_half
 			buffer.tick_rate = msg.tick_rate
@@ -119,10 +144,35 @@ func _handle(msg: Dictionary) -> void:
 		Protocol.SNAPSHOT:
 			if state == State.JOINED:
 				players_mask = msg.players
+				_last_snapshot_ms = Time.get_ticks_msec()
 				buffer.push(msg.tick, msg.units)
+		Protocol.NOTICE:
+			if msg.code == Protocol.NOTICE_HOST_PAUSED:
+				host_paused = true
+			elif msg.code == Protocol.NOTICE_HOST_RESUMED:
+				host_paused = false
 		Protocol.RESULT:
 			if state == State.JOINED:
 				command_result.emit(msg.seq, msg.ok)
+
+
+static func _load_token() -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var fresh := (rng.randi() << 32) | rng.randi()
+	if fresh == 0:
+		fresh = 1
+	if not OS.has_feature("mobile"):
+		return fresh
+	var f := FileAccess.open(TOKEN_PATH, FileAccess.READ)
+	if f and f.get_length() == 8:
+		var saved := f.get_64()
+		if saved != 0:
+			return saved
+	f = FileAccess.open(TOKEN_PATH, FileAccess.WRITE)
+	if f:
+		f.store_64(fresh)
+	return fresh
 
 
 func _timed_out() -> bool:

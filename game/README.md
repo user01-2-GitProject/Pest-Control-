@@ -74,7 +74,8 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 - **Server-authoritative.** Clients send only move intent (`MOVE`: unit ids + target).
   The server runs SimWorld and its `issue_move` validation (ownership, list size,
-  finite target), and caps each client at 8 commands per tick.
+  finite target). Each client gets 8 commands per tick (extras dropped) and is
+  kicked above 100 packets/s.
 - **Snapshots, 20 Hz.** After every tick each client gets the full unit state
   (8 bytes per unit, ~330 bytes per tick for 40 ants, ~6.6 KB/s down). Sent
   unreliable-ordered, so a late snapshot is dropped instead of stalling newer ones.
@@ -82,17 +83,28 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 - **Interpolation.** Clients draw the world 2 ticks (100 ms) behind the newest
   snapshot and blend between snapshots. That hides jitter up to ~50 ms and one
   lost packet. No extrapolation: if snapshots stop, ants hold still.
-- **Join.** `HELLO` carries a protocol version; mismatched or third clients are
-  rejected with a reason. A player who leaves frees their slot; the next client
-  to join takes over that slot and its ants (stand-in for real reconnect).
+- **Join.** `HELLO` carries a protocol version and a random install token.
+  Mismatched versions and strangers (when both slots are taken) are rejected with
+  a reason. A slot belongs to the first token that took it; the same phone can
+  rejoin it at once, even before its old connection times out.
+- **Dead links.** ENet peer timeout is 5 s (default 30). Clients show
+  "Connection unstable" after 1.5 s without snapshots, and "Host paused" when
+  the hosting phone goes to the background.
 
 ## Known limits
 
 - Online: tap-to-move shows the marker at once, but ants start moving about
   100 ms + one-way latency later (no client-side prediction yet). Measure on phones
   before deciding whether prediction is needed.
-- Online: no player identity, so anyone on the network can take a free slot.
-  LAN only; don't expose the port to the internet.
+- Online: the install token is not authentication; anyone who copies it can take
+  the slot. LAN only; don't expose the port to the internet.
+- Hosting on a phone: the server ticks in the render loop, so a host hitch over
+  250 ms drops sim time (logged as "dropped N ticks") and backgrounding the host
+  stops the match. A dedicated server avoids both; a server thread is planned
+  before the 2 x 50 stress milestone. The host also plays at ~0 ms ping while
+  the other player pays Wi-Fi latency, so competitive play needs a dedicated server.
+- iOS: LAN play will need `NSLocalNetworkUsageDescription` in the iOS export
+  (no export presets are in the repo yet).
 - Online: full snapshots every tick. Fine for 2 x 20; delta-compress before 2 x 50
   with combat.
 - Not yet tested on real phones or a real Wi-Fi network; CI covers localhost UDP only.

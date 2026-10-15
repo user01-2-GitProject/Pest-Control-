@@ -41,8 +41,11 @@ func _check(cond: bool, msg: String) -> void:
 # --- Part 1: protocol --------------------------------------------------------
 
 func _test_roundtrip() -> void:
-	var m := Proto.decode(Proto.hello())
-	_check(m.get("type") == Proto.HELLO and m.version == Proto.VERSION, "hello roundtrip")
+	var m := Proto.decode(Proto.hello(0x1234567890ABCDEF))
+	_check(m.get("type") == Proto.HELLO and m.version == Proto.VERSION and m.token == 0x1234567890ABCDEF,
+		"hello roundtrip")
+	m = Proto.decode(Proto.notice(Proto.NOTICE_HOST_PAUSED))
+	_check(m.get("type") == Proto.NOTICE and m.code == Proto.NOTICE_HOST_PAUSED, "notice roundtrip")
 	m = Proto.decode(Proto.welcome(2, 1234, 20, Vector2(30, 25)))
 	_check(m.get("player") == 2 and m.tick == 1234 and m.tick_rate == 20 and m.map_half == Vector2(30, 25),
 		"welcome roundtrip")
@@ -57,9 +60,12 @@ func _test_roundtrip() -> void:
 func _test_malformed_rejected() -> void:
 	_check(Proto.decode(PackedByteArray()).is_empty(), "empty packet")
 	_check(Proto.decode(PackedByteArray([99, 1, 2])).is_empty(), "unknown type")
-	var hello := Proto.hello()
+	var hello := Proto.hello(5)
+	_check(Proto.decode(hello.slice(0, 14)).is_empty(), "truncated hello")
 	hello[1] ^= 0xFF
 	_check(Proto.decode(hello).is_empty(), "bad magic")
+	var old := Proto.decode(Proto.hello(0, 1).slice(0, 7))
+	_check(old.get("version") == 1, "v1 hello (no token) still decodes, so it can be told to update")
 	var mv := Proto.move(1, [1, 2, 3], Vector2.ZERO)
 	_check(Proto.decode(mv.slice(0, mv.size() - 1)).is_empty(), "truncated move")
 	mv.append(0)
@@ -219,12 +225,8 @@ func _test_live_match() -> void:
 		raw.poll()
 		if raw.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED and got[0].is_empty():
 			got[0] = {"sent": true}
-			var b := StreamPeerBuffer.new()
-			b.put_u8(Proto.HELLO)
-			b.put_u32(Proto.MAGIC)
-			b.put_u16(Proto.VERSION + 1)
 			raw.set_target_peer(1)
-			raw.put_packet(b.data_array)
+			raw.put_packet(Proto.hello(99, Proto.VERSION + 1))
 		while raw.get_available_packet_count() > 0:
 			got[0] = Proto.decode(raw.get_packet())
 		return got[0].get("type") == Proto.REJECT
@@ -257,28 +259,61 @@ func _test_live_match() -> void:
 	var s2 := c2.buffer.sample()
 	_check(s1.size() == 40 and s2.size() == 40, "both clients still see all ants")
 
-	# Command flood is capped per tick.
+	# Command flood: 8 per tick reach the sim, one reject reply, rest dropped.
 	results.clear()
 	for i in 30:
 		c1.send_move(mine, target)
-	await _wait(func() -> bool: return results.size() >= 30, 3.0)
+	await _wait(func() -> bool: return false, 0.5)
+	var accepted := 0
 	var refused := 0
 	for ok in results.values():
-		if not ok:
+		if ok:
+			accepted += 1
+		else:
 			refused += 1
-	_check(refused > 0, "flood of 30 commands in one burst is partly refused (%d)" % refused)
+	_check(accepted >= 8 and accepted <= 16 and refused >= 1 and refused <= 2,
+		"flood of 30: %d accepted, %d refused replies (want 8-16, 1-2)" % [accepted, refused])
 
-	# A leaving player frees the slot; a new client takes it over with its ants.
-	var leaving_slot := c2.player_id
-	c2.close()
-	_check(await _wait(func() -> bool: return not c1.opponent_present(), 5.0), "other client sees opponent leave")
+	# The host pausing reaches the other player.
+	server.notify_paused(true)
+	_check(await _wait(func() -> bool: return c1.host_paused, 2.0), "client told host paused")
+	server.notify_paused(false)
+	_check(await _wait(func() -> bool: return not c1.host_paused, 2.0), "client told host resumed")
+
+	# A phone that vanishes without disconnecting (Wi-Fi drop, app killed)
+	# and rejoins with the same install token gets its slot back at once.
+	var lost_slot := c2.player_id
+	var lost_token := c2.token
+	c2.process_mode = Node.PROCESS_MODE_DISABLED  # stops polling: no clean disconnect
+	var stranger: NetClient = Client.new()
+	root.add_child(stranger)
+	var stranger_rej := [-1]
+	stranger.rejected.connect(func(r: int) -> void: stranger_rej[0] = r)
+	stranger.connect_to("127.0.0.1", PORT)
+	_check(await _wait(func() -> bool: return stranger_rej[0] != -1, 5.0) and stranger_rej[0] == Proto.REJECT_FULL,
+		"another device can't take a player's slot")
 	var c4: NetClient = Client.new()
+	c4.token = lost_token
 	root.add_child(c4)
+	var t0 := Time.get_ticks_msec()
 	c4.connect_to("127.0.0.1", PORT)
-	_check(await _wait(func() -> bool: return c4.state == NetClient.State.JOINED, 5.0)
-		and c4.player_id == leaving_slot, "rejoining client takes the free slot")
+	_check(await _wait(func() -> bool: return c4.state == NetClient.State.JOINED, 3.0)
+		and c4.player_id == lost_slot, "same install rejoins its slot")
+	_check(Time.get_ticks_msec() - t0 < 2000, "rejoin doesn't wait for the old connection to time out")
+	_check(await _wait(func() -> bool: return _ids(c4, lost_slot).size() == 20, 2.0),
+		"rejoined player has their 20 ants")
+	c2.process_mode = Node.PROCESS_MODE_INHERIT
+	_check(await _wait(func() -> bool: return c2.state == NetClient.State.CLOSED, 3.0),
+		"stale connection is closed by the server")
 
-	for n in [c1, c3, c4]:
+	# A client spamming packets is kicked.
+	var failed := [""]
+	c1.connection_failed.connect(func(m: String) -> void: failed[0] = m)
+	for i in 300:
+		c1.send_move(mine, target)
+	_check(await _wait(func() -> bool: return failed[0] != "", 3.0), "packet flooder gets disconnected")
+
+	for n in [c1, c3, c4, stranger]:
 		n.close()
 	server.stop()
 
