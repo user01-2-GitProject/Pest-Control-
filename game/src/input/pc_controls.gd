@@ -8,13 +8,14 @@ extends Node
 ##   right click            order selection: move, attack, or milk
 ##   arrows                 pan camera; also mouse at the screen edge
 ##                          (W A S D too while PAN_WITH_WASD is on)
-##   middle drag            pan camera (grab the ground)
+##   middle drag, or hold Space and move the mouse
+##                          pan camera (grab the ground)
 ##   wheel / trackpad pinch zoom at the cursor
 ##   Ctrl+A / Esc           select all / clear selection
 ##   Ctrl+1-9 / Shift+1-9   set / add to control group
 ##   1-9, twice             select group; second tap centers the camera on it
 ##   Q / E                  train worker / soldier
-##   Space                  center the camera on your colony
+##   Backspace              center the camera on your colony
 ##
 ## Touch input stays in TouchControls; this node only reads mouse and keys.
 ## It reports gestures as signals and never touches game state itself.
@@ -49,6 +50,7 @@ var _left_down := false
 var _boxing := false
 var _start := Vector2.ZERO
 var _double := false
+var _space_pan := false  # Space held: mouse motion grabs and drags the ground
 
 
 func _ready() -> void:
@@ -70,6 +72,7 @@ func set_enabled(on: bool) -> void:
 
 func _reset_input() -> void:
 	_held.clear()
+	_space_pan = false
 	_reset_pointer()
 
 
@@ -90,7 +93,8 @@ func _process(delta: float) -> void:
 		dir.y -= 1.0
 	if _held.has(KEY_DOWN):
 		dir.y += 1.0
-	if dir == Vector2.ZERO and edge_scroll and not _boxing and DisplayServer.window_is_focused():
+	if dir == Vector2.ZERO and edge_scroll and not _boxing and not _space_pan \
+			and DisplayServer.window_is_focused():
 		dir = _edge_dir()
 	if dir != Vector2.ZERO:
 		scroll.emit(dir.limit_length(1.0), delta)
@@ -132,6 +136,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_key(e: InputEventKey) -> void:
+	if e.keycode == KEY_SPACE:
+		_space_pan = e.pressed
+		return
 	if e.echo:
 		return
 	var k: int = e.keycode
@@ -158,7 +165,7 @@ func _on_key(e: InputEventKey) -> void:
 		train.emit(SimWorld.WORKER)
 	elif k == KEY_E:
 		train.emit(SimWorld.SOLDIER)
-	elif k == KEY_SPACE:
+	elif k == KEY_BACKSPACE:
 		home.emit()
 
 
@@ -194,7 +201,7 @@ func _on_button(e: InputEventMouseButton) -> void:
 
 
 func _on_motion(e: InputEventMouseMotion) -> void:
-	if e.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
+	if _space_pan or e.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
 		pan.emit(e.position - e.relative, e.position)
 	if not _left_down:
 		return
