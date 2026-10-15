@@ -1,30 +1,11 @@
-# AGENTS.md
+# Pest Control agent guidance
 
-You're helping build **Pest Control**, a native mobile RTS. Claude is lead engineer. You assist.
+Read [README.md](README.md) for current scope, [COLLABORATION.md](COLLABORATION.md) for responsibilities, and [game/README.md](game/README.md) for the unfinished build and actual controls.
 
-## Game
+Jimmy steers the game. Claude leads core engineering. Codex leads visual direction, assets, UI, PR review, and code review, and contributes scoped implementation. Work as peers.
 
-- 1v1 online insect RTS on a forest floor, high-angle camera.
-- Factions: Ants (swarm), Ladybugs (flying), Beetles (armored).
-- Economy: milk aphids for Honeydew (steady) or eat them for Biomass (fast, but kills income).
-- 50 units per player, ~10 minute matches.
-- Art: low-poly 3D. Red ants, stag beetles, ladybugs, glowing mushrooms, blue crystals, log-bridge chokepoints.
+Codex may develop its own visual work independently within the agreed direction. Keep a concise change journal and bring batches to Jimmy for a quick walkthrough. Coordinate runtime integration and avoid files changed by another open PR unless Jimmy authorizes the overlap or reconciliation.
 
-## Tech
+Technical reviews need no special trigger. Give a plain-English verdict, actionable file/line findings, and honest verification limits. Do not ask Jimmy to evaluate unfamiliar code.
 
-- Godot 4.7, iOS + Android, smooth on ~2020 mid-range phones.
-- Server-authoritative netcode: server runs the game and decides damage and resources. Phones send commands and render.
-- Repo: https://github.com/user01-2-GitProject/Pest-Control-
-- Current milestone: offline Android prototype. One map, 20 ants, pan/zoom camera, tap/drag select, tap to move.
-
-## Your role
-
-1. **Visuals:** turn art briefs into concept art, textures, icons and UI in the style above.
-2. **Review:** on `@codex review`, check correctness, mobile performance and netcode bugs. Cite file and line.
-3. **Coding:** only GitHub issues assigned to you. Use your own branch, touch only the files the issue names, open a PR.
-
-## Rules
-
-- Never edit files that Claude's open PRs change.
-- Ask before changing the engine, netcode model or project structure.
-- Prototype first, polish later.
+Use isolated branches and PRs. Other implementation work follows assigned issues or Jimmy's explicit authorization. Ask before changing the engine, netcode model, or project structure. Do not equate a build, mockup, or headless test with finished gameplay or verified rendered performance.

@@ -14,7 +14,7 @@ Both agents may flag bugs, challenge assumptions, suggest improvements, and expl
 
 ### Visuals and usability
 
-Translate art briefs into concept art, textures, icons, and UI consistent with the low-poly 3D forest floor. Check faction silhouettes, selection feedback, readable combat, touch targets, and camera usability. Keep the prototype readable before spending time on polish.
+Translate art briefs into concept art, textures, icons, and UI consistent with the low-poly 3D forest floor. Check faction silhouettes, selection feedback, readable combat, desktop UI targets, and camera usability. Keep the prototype readable before spending time on polish.
 
 ### PR and code review
 
@@ -25,8 +25,8 @@ Review the actual diff and surrounding code, check available validation, and dis
 Focus on:
 - **Correctness:** selection, commands, unit lifecycle, economy, combat, and error handling relevant to the change.
 - **Movement and collisions:** overlaps, jitter, stuck units, unreachable destinations, chokepoint congestion, and fast objects passing through colliders.
-- **Mobile performance:** frame pacing, repeated allocations, expensive per-unit loops, pathfinding frequency, draw calls, memory use, and sustained device behavior.
-- **Touch input:** selection versus camera gestures, accidental orders, zoom behavior, and UI interception.
+- **PC performance:** frame pacing, repeated allocations, expensive per-unit loops, pathfinding frequency, draw calls, memory use, and sustained device behavior.
+- **RTS input:** mouse selection versus orders, drag selection, keyboard shortcuts, camera controls, and UI interception.
 - **Multiplayer, when present:** server authority, command ownership and validation, duplicate or stale commands, synchronization, disconnects, reconnects, and client trust.
 - **Verification:** meaningful regression checks, reproducible failures, and whether the evidence supports the claims.
 
@@ -39,7 +39,13 @@ Give Jimmy:
 
 Give Claude enough detail to reproduce and fix each issue. Jimmy should not have to interpret a diff or determine whether code is technically safe.
 
-A build passing does not prove smooth phone performance, correct rendered visuals, stable collisions, or working multiplayer. Report actual evidence; do not invent device results. Review approval is not permission to merge or deploy.
+A build passing does not prove smooth rendered performance, correct rendered visuals, stable collisions, or working multiplayer. Report actual evidence; do not invent device results. Review approval is not permission to merge or deploy.
+
+### Independent visual work
+
+Codex may lead visual exploration and produce UI, icons, concept art, and textures without waiting on Claude. Once Jimmy approves a direction, work independently within it, keep a concise change journal, and review batches with Jimmy for adjustments. Check overlap before runtime integration.
+
+Current art targets are graphic/vector Low and tactile clay/sculpted High. Preserve faction identity, silhouettes, selection behavior, collision boundaries, and gameplay information across settings. These targets are not yet implemented.
 
 ### Scoped coding
 

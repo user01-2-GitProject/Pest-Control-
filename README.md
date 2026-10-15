@@ -1,16 +1,19 @@
 # Pest Control
 
-A native mobile, 1v1 insect RTS set on a forest floor. We are building a playable prototype first and adding polish as the game proves itself.
+A PC-first, 1v1 insect RTS set on a forest floor. We are building a playable prototype first and adding polish as the game proves itself.
 
-## Current milestone
+## Current build
 
-**Offline Android prototype:** one map, 20 ants, a pan/zoom camera, tap/drag selection, and tap-to-move commands.
+An unfinished Godot prototype with an Ants-only match loop: gather Honeydew, train workers and soldiers, fight, and win by destroying a colony or the ten-minute health tiebreak. Play offline against a bot or connect two clients over LAN.
 
-This is the milestone target, not a claim that every feature is implemented or tested. Online play and iOS are product goals; this document does not claim either is ready.
+See [game/README.md](game/README.md) for running the build, current controls, tests, and limitations. Jimmy tested the earlier movement prototype (PR #3). The integrated match loop has headless validation; that does not establish visual polish or complete gameplay.
+
+The direction is PC with standard RTS mouse-and-keyboard controls. The current build still has touch-first mouse equivalents; the control conversion remains unfinished. Mobile is deferred.
 
 ## Game direction
 
-- High-angle camera and low-poly 3D art.
+- High-angle camera. Recognizable insects with independently distinctive faction identities.
+- Agreed visual targets: clean graphic/vector Low and tactile clay/sculpted High, sharing gameplay visibility and silhouettes. These are concept targets, not implemented graphics settings.
 - Ants specialize in swarms, ladybugs in flight, and beetles in armor.
 - Milk aphids for steady Honeydew, or eat them for fast Biomass at the cost of future income.
 - Target match scale: 50 units per player and roughly 10-minute matches.
@@ -19,9 +22,9 @@ This is the milestone target, not a claim that every feature is implemented or t
 ## Technical direction
 
 - Specified engine: Godot 4.7. Verify the actual project version and available toolchain before setup or export; do not silently change it.
-- Target platforms: Android and iOS, with smooth sustained play on roughly 2020 mid-range phones.
-- Multiplayer direction: server-authoritative simulation. Phones send commands and render; the server decides game state, including damage and resources.
-- Device performance, collision quality, and online reliability require measured validation. A desktop run or successful build does not establish mobile readiness.
+- Current platform scope: PC (Linux and Windows); minimum hardware remains to be established. Mobile is deferred.
+- Multiplayer direction: server-authoritative simulation. Clients send commands and render; the server decides game state, including damage and resources.
+- Device performance, collision quality, and online reliability require measured validation. A desktop run or successful build does not establish release readiness.
 - Engine, netcode model, and project structure changes need Jimmy's agreement.
 
 ## How we work
