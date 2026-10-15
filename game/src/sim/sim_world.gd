@@ -106,6 +106,11 @@ class Colony:
 	var max_hp: int = COLONY_HP
 	var queue: Array[int] = []
 	var progress: int = 0
+	## Where newly trained ants go. has_rally false = workers auto-milk the
+	## nearest aphids and soldiers stay by the mound.
+	var has_rally := false
+	var rally := Vector2.ZERO
+	var rally_id := 0  # aphid or enemy to milk / attack, else 0
 
 
 class Aphid:
@@ -246,6 +251,11 @@ func queue_train(player: int, kind: int, seq: int = 0) -> void:
 	_pending.append({"what": "train", "player": player, "kind": kind, "seq": seq})
 
 
+func queue_rally(player: int, target: Vector2, target_id: int = 0, seq: int = 0) -> void:
+	_pending.append({"what": "rally", "player": player, "target": target,
+		"target_id": target_id, "seq": seq})
+
+
 ## Plain per-entity state for views: they never touch Unit directly, so the
 ## same view code draws server snapshots. hp is a 0..1 fraction; flags bit 0 =
 ## carrying honeydew, bit 1 = attacking this tick.
@@ -276,7 +286,8 @@ func player_state(player: int) -> Dictionary:
 			progress = float(col.progress) / STATS[queue[0]].train_ticks
 	return {"honeydew": honeydew.get(player, 0), "units": unit_count(player),
 		"queue": queue, "queue_len": queue.size(), "front": 0 if queue.is_empty() else queue[0],
-		"progress": progress}
+		"progress": progress, "has_rally": col != null and col.has_rally,
+		"rally": col.rally if col else Vector2.ZERO}
 
 
 ## Validates and applies an order. Returns false (and changes nothing) if the
@@ -319,6 +330,26 @@ func issue_order(player: int, unit_ids: Array, target: Vector2, target_id: int =
 			_formation_move(others, t.pos)
 		return true
 	_formation_move(group, target)
+	return true
+
+
+## Sets where `player`'s newly trained ants go. A target_id that is an aphid
+## or an enemy is remembered so new ants milk / attack it; anything else is a
+## ground point; the colony itself clears the rally. Fails if the match is over, the colony is gone or the point
+## is not finite.
+func issue_rally(player: int, target: Vector2, target_id: int = 0) -> bool:
+	var col: Colony = colonies.get(player)
+	if winner != 0 or col == null or not target.is_finite():
+		return false
+	var t: Object = _entities.get(target_id) if target_id != 0 else null
+	if t == col:
+		col.has_rally = false  # Rallying onto the mound itself clears it.
+		col.rally_id = 0
+		return true
+	var keep_id := t is Aphid or ((t is Unit or t is Colony) and t.owner != player)
+	col.rally_id = target_id if keep_id else 0
+	col.rally = t.pos if keep_id else clamp_to_map(target)
+	col.has_rally = true
 	return true
 
 
@@ -418,6 +449,8 @@ func _apply_pending() -> void:
 		var ok := false
 		if c.what == "train":
 			ok = issue_train(c.player, c.kind)
+		elif c.what == "rally":
+			ok = issue_rally(c.player, c.target, c.target_id)
 		else:
 			ok = issue_order(c.player, c.ids, c.target, c.target_id)
 		last_results.append({"player": c.player, "seq": c.seq, "tick": tick, "ok": ok, "what": c.what})
@@ -437,7 +470,11 @@ func _produce() -> void:
 		var out := (-col.pos).normalized() if col.pos.length() > 0.01 else Vector2.RIGHT
 		out = out.rotated(((_next_id % 7) - 3) * 0.35)
 		var u := spawn_unit(p, col.pos + out * (col.radius + 1.0), kind)
-		if kind == WORKER:
+		if col.has_rally:
+			# A rally target that has since died falls back to its last point.
+			var tid := col.rally_id if _entities.has(col.rally_id) else 0
+			issue_order(p, [u.id], col.rally, tid)
+		elif kind == WORKER:
 			_start_gather(u, nearest_aphid(col.pos))
 
 

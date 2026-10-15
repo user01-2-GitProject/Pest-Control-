@@ -14,10 +14,12 @@ extends RefCounted
 ##   SNAPSHOT  s->c  tick u32, players u8 (bitmask of connected slots), winner u8,
 ##                   started u8, then for player 1 and 2: honeydew u16, ants u8,
 ##                   queue length u8, queue front kind u8, progress u8 (1/255),
+##                   has rally u8, rally x i16, rally y i16,
 ##                   then count u16 and per entity: id u16, kind u8, owner u8,
 ##                   x i16, y i16, facing u8, hp u8 (1/255 of max), flags u8
 ##   TRAIN     c->s  seq u32, kind u8
 ##   NOTICE    s->c  code u8 (host paused/resumed)
+##   RALLY     c->s  seq u32, x f32, y f32, target_id u16 (aphid/enemy, else 0)
 ##
 ## Snapshot positions are fixed point (1/POS_SCALE m), facing is 1/256 turn.
 ## 11 bytes per entity: at the 2 x 50 ant cap plus colonies and aphids that is
@@ -26,7 +28,7 @@ extends RefCounted
 
 const MAGIC := 0x54534550  # "PEST"
 ## Bump on any wire change. Server rejects clients with a different version.
-const VERSION := 3
+const VERSION := 4
 const DEFAULT_PORT := 7777
 
 const HELLO := 1
@@ -37,6 +39,7 @@ const RESULT := 5
 const SNAPSHOT := 6
 const TRAIN := 7
 const NOTICE := 8
+const RALLY := 9
 
 const REJECT_VERSION := 1
 const REJECT_FULL := 2
@@ -47,7 +50,7 @@ const NOTICE_HOST_RESUMED := 2
 const POS_SCALE := 100.0
 const MAX_SNAPSHOT_UNITS := 1024
 const MAX_ORDER_IDS := 255
-const PLAYER_BLOCK := 6
+const PLAYER_BLOCK := 11
 const SNAPSHOT_HEADER := 1 + 4 + 1 + 1 + 1 + 2 * PLAYER_BLOCK + 2
 const ENTITY_BYTES := 11
 
@@ -101,6 +104,17 @@ static func train(seq: int, kind: int) -> PackedByteArray:
 	return b.data_array
 
 
+static func rally(seq: int, target: Vector2, target_id: int = 0) -> PackedByteArray:
+	if target_id < 0 or target_id > 0xFFFF:
+		return PackedByteArray()
+	var b := _buf(RALLY)
+	b.put_u32(seq)
+	b.put_float(target.x)
+	b.put_float(target.y)
+	b.put_u16(target_id)
+	return b.data_array
+
+
 static func notice(code: int) -> PackedByteArray:
 	var b := _buf(NOTICE)
 	b.put_u8(code)
@@ -133,6 +147,10 @@ static func snapshot(tick: int, players: int, units: Array, winner: int = 0,
 		b.put_u8(clampi(queue.size(), 0, 255))
 		b.put_u8(0 if queue.is_empty() else int(queue[0]) & 0xFF)
 		b.put_u8(clampi(roundi(float(st.get("progress", 0.0)) * 255.0), 0, 255))
+		var rally: Vector2 = st.get("rally", Vector2.ZERO)
+		b.put_u8(1 if st.get("has_rally", false) else 0)
+		b.put_16(clampi(roundi(rally.x * POS_SCALE), -32768, 32767))
+		b.put_16(clampi(roundi(rally.y * POS_SCALE), -32768, 32767))
 	b.put_u16(count)
 	for i in count:
 		var u: Dictionary = units[i]
@@ -201,6 +219,12 @@ static func decode(data: PackedByteArray) -> Dictionary:
 			for i in count:
 				ids.append(b.get_u16())
 			return {"type": ORDER, "seq": seq, "target": target, "target_id": target_id, "ids": ids}
+		RALLY:
+			if n != 15:
+				return {}
+			var seq := b.get_u32()
+			var target := Vector2(b.get_float(), b.get_float())
+			return {"type": RALLY, "seq": seq, "target": target, "target_id": b.get_u16()}
 		TRAIN:
 			if n != 6:
 				return {}
@@ -225,8 +249,10 @@ static func decode(data: PackedByteArray) -> Dictionary:
 				var qlen := b.get_u8()
 				var front := b.get_u8()
 				var progress := b.get_u8() / 255.0
+				var has_rally := b.get_u8() != 0
+				var rally := Vector2(b.get_16(), b.get_16()) / POS_SCALE
 				states[p] = {"honeydew": honey, "units": ants, "queue_len": qlen,
-					"front": front, "progress": progress}
+					"front": front, "progress": progress, "has_rally": has_rally, "rally": rally}
 			var count := b.get_u16()
 			if count > MAX_SNAPSHOT_UNITS or n != SNAPSHOT_HEADER + count * ENTITY_BYTES:
 				return {}

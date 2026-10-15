@@ -161,7 +161,58 @@ func _check_pc_controls(main: Node) -> int:
 			return main.sim.colonies[main.local_player].queue.size() == queued + 1, 3.0):
 		printerr("FAIL: Q should train a worker")
 		fails += 1
+	fails += await _check_rally(main)
 	main._set_selection([])
+	return fails
+
+
+## Click the mound, right-click the ground: the rally point is set and its
+## line shows. Right-clicking the mound clears it.
+func _check_rally(main: Node) -> int:
+	var fails := 0
+	var pc: PcControls = main.pc
+	var col: SimWorld.Colony = main.sim.colonies[main.local_player]
+	var col_sp: Vector2 = main.rig.world_to_screen(Vector3(col.pos.x, 0.2, col.pos.y))
+	if main.pick_unit(col_sp) == -1:
+		pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, true))
+		pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, false))
+	else:
+		main._select_colony()  # An ant is in the way; the click would pick it.
+	if not main.colony_selected or not main.selection.is_empty():
+		printerr("FAIL: clicking our mound should select it")
+		return fails + 1
+	var target := col.pos + Vector2(6, 0)
+	var sp: Vector2 = main.rig.world_to_screen(Vector3(target.x, 0.0, target.y))
+	var markers := _count_markers(main)
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, sp, false))
+	if _count_markers(main) != markers + 1:
+		printerr("FAIL: right click with the mound selected should show a marker")
+		fails += 1
+	if not await _wait(func() -> bool: return col.has_rally, 3.0):
+		printerr("FAIL: right click with the mound selected should set the rally")
+		return fails + 1
+	if col.rally.distance_to(target) > 0.5:
+		printerr("FAIL: rally at %s, expected near %s" % [col.rally, target])
+		fails += 1
+	await process_frame
+	if main.rally_view.dash_count() == 0:
+		printerr("FAIL: the rally line should show while the mound is selected")
+		fails += 1
+	# Selecting ants deselects the mound; the line fades after a moment.
+	main._select_all()
+	if main.colony_selected:
+		printerr("FAIL: selecting ants should deselect the mound")
+		fails += 1
+	if not await _wait(func() -> bool: return not main.rally_view.visible, 3.0):
+		printerr("FAIL: the rally line should hide once the mound is deselected")
+		fails += 1
+	main._select_colony()
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, col_sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, col_sp, false))
+	if not await _wait(func() -> bool: return not col.has_rally, 3.0):
+		printerr("FAIL: right-clicking our own mound should clear the rally")
+		fails += 1
 	return fails
 
 

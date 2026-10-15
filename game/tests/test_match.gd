@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_worker_gathers_honeydew()
 	_test_train_spends_and_spawns()
 	_test_train_rejections()
+	_test_rally_point()
 	_test_unit_cap()
 	_test_soldier_kills_worker()
 	_test_simultaneous_kill()
@@ -99,6 +100,40 @@ func _test_train_spends_and_spawns() -> void:
 		if u.kind == Sim.WORKER:
 			w = u
 	_check(w != null and w.task == Sim.Task.NONE, "new worker idle when no aphids exist")
+
+
+func _test_rally_point() -> void:
+	var sim := Sim.new()
+	var col = sim.add_colony(1, Vector2(-10, 0))
+	sim.add_colony(2, Vector2(10, 0))
+	var aphid = sim.add_aphid(Vector2(-10, 8))
+	sim.honeydew[1] = 1000
+	sim.queue_rally(1, Vector2(-4, -6), 0, 7)
+	sim.step()
+	_check(sim.last_results[0].ok and sim.last_results[0].what == "rally", "rally accepted")
+	var st := sim.player_state(1)
+	_check(st.has_rally and st.rally.distance_to(Vector2(-4, -6)) < 0.01, "rally in player state")
+	sim.issue_train(1, Sim.SOLDIER)
+	_run(sim, Sim.STATS[Sim.SOLDIER].train_ticks + Sim.TICK_RATE * 5)
+	var soldier: Sim.Unit = null
+	for u in sim.units:
+		if u.kind == Sim.SOLDIER:
+			soldier = u
+	_check(soldier != null and soldier.pos.distance_to(Vector2(-4, -6)) < 1.0,
+		"trained soldier walks to the rally point, at %s" % (soldier.pos if soldier else Vector2.INF))
+	# Rally on aphids: new workers milk them.
+	_check(sim.issue_rally(1, Vector2.ZERO, aphid.id), "rally on aphid")
+	sim.issue_train(1, Sim.WORKER)
+	_run(sim, Sim.STATS[Sim.WORKER].train_ticks + 1)
+	var w: Sim.Unit = null
+	for u in sim.units:
+		if u.kind == Sim.WORKER:
+			w = u
+	_check(w != null and w.task == Sim.Task.GATHER and w.task_target == aphid.id, "rallied worker milks the aphid")
+	# Rallying onto the own mound clears it; bad points are rejected.
+	_check(sim.issue_rally(1, col.pos, col.id) and not sim.player_state(1).has_rally, "own mound clears rally")
+	_check(not sim.issue_rally(1, Vector2(NAN, 0)), "non-finite rally rejected")
+	_check(not sim.issue_rally(3, Vector2.ZERO), "rally without a colony rejected")
 
 
 func _test_train_rejections() -> void:

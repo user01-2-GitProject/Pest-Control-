@@ -116,6 +116,18 @@ func send_train(kind: int) -> int:
 	return _seq
 
 
+## Sets our colony's rally point. Returns seq or -1.
+func send_rally(target: Vector2, target_id: int = 0) -> int:
+	if state != State.JOINED:
+		return -1
+	var data := Protocol.rally(_seq + 1, target, target_id)
+	if data.is_empty():
+		return -1
+	_seq += 1
+	_send(data)
+	return _seq
+
+
 func _process(delta: float) -> void:
 	poll(delta)
 

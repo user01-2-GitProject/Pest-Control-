@@ -13,6 +13,8 @@ const PICK_RADIUS_PX := 40.0
 const MAX_TICKS_PER_FRAME := 5
 ## Second tap of a group key within this many ms centers the camera on it.
 const GROUP_DOUBLE_TAP_MS := 350
+## The rally line stays up this long after setting it with the mound unselected.
+const RALLY_FLASH_S := 1.5
 
 var mode := Mode.MENU
 var local_player := 1
@@ -27,16 +29,21 @@ var hud: Hud
 var menu: Menu
 var selection: Dictionary = {}  # unit id -> true
 var groups: Dictionary = {}  # 1-9 -> Array of unit ids (client-side only)
+## Own mound selected (client-side): right-click then sets its rally point.
+var colony_selected := false
+var rally_view: RallyView
 
 var _views: Dictionary = {}  # entity id -> UnitView / ColonyView / AphidView
 var _units_root: Node3D
 var _acc := 0.0
 var _snapshot: Array[Dictionary] = []
 var _stats_timer := 0.0
-## Online: seq -> "order" / "train", to word rejections.
+## Online: seq -> "order" / "train" / "rally", to word rejections.
 var _sent: Dictionary = {}
 var _last_group := 0
 var _last_group_ms := 0
+var _rally_flash := 0.0
+var _rally_local := Vector2.ZERO  # just-sent point, until the sim echoes it
 
 
 func _ready() -> void:
@@ -47,6 +54,9 @@ func _ready() -> void:
 	_units_root = Node3D.new()
 	_units_root.name = "Units"
 	add_child(_units_root)
+
+	rally_view = RallyView.new()
+	add_child(rally_view)
 
 	rig = CameraRig.new()
 	rig.bounds = MAP_HALF
@@ -178,6 +188,8 @@ func _back_to_menu(status: String) -> void:
 ## Drops whatever session is running and shows the menu.
 func _reset() -> void:
 	_set_selection([])
+	_rally_flash = 0.0
+	rally_view.hide_line()
 	groups.clear()
 	_last_group = 0
 	for v in _views.values():
@@ -216,6 +228,7 @@ func _process(delta: float) -> void:
 			return
 
 	_sync_views(alpha, delta)
+	_update_rally_line(delta)
 
 	_stats_timer -= delta
 	if _stats_timer <= 0.0:
@@ -340,7 +353,13 @@ func _update_result() -> void:
 
 
 func _toast_rejected(what: String) -> void:
-	hud.toast("Can't train that now" if what == "train" else "Can't order those ants")
+	match what:
+		"train":
+			hud.toast("Can't train that now")
+		"rally":
+			hud.toast("Can't set the rally point")
+		_:
+			hud.toast("Can't order those ants")
 
 
 func _stats_text() -> String:
@@ -391,14 +410,21 @@ func _on_tapped(screen_pos: Vector2) -> void:
 	if hit != -1:
 		_set_selection([hit])
 		return
+	if selection.is_empty() and not colony_selected and _over_own_colony(screen_pos):
+		_select_colony()
+		return
 	_on_command(screen_pos)
 
 
 ## Mouse left click: select the ant under the cursor (Shift toggles it in the
 ## selection). Empty ground clears the selection unless Shift is held.
 ## A double click selects every own ant of that type on screen.
+## Clicking your own mound selects it, so right-click sets its rally point.
 func _on_clicked(screen_pos: Vector2, additive: bool, double := false) -> void:
 	var hit := pick_unit(screen_pos)
+	if hit == -1 and not additive and _over_own_colony(screen_pos):
+		_select_colony()
+		return
 	if double and hit != -1:
 		_select_same_kind_on_screen(hit, additive)
 		return
@@ -415,13 +441,19 @@ func _on_clicked(screen_pos: Vector2, additive: bool, double := false) -> void:
 
 ## Orders the selection at a screen point: an enemy ant or colony there is
 ## attacked, aphids are milked, anywhere else is a move.
+## With the mound selected it sets the rally point instead.
 func _on_command(screen_pos: Vector2) -> void:
-	if selection.is_empty():
+	if selection.is_empty() and not colony_selected:
 		return
 	var g: Variant = rig.screen_to_ground(screen_pos)
 	if g == null:
 		return
 	var ground := Vector2(g.x, g.z)
+	if colony_selected:
+		var own := _own_colony()
+		var on_mound := not own.is_empty() and ground.distance_to(own.pos) < SimWorld.COLONY_RADIUS
+		command_rally(ground, own.id if on_mound else pick_target(screen_pos, ground))
+		return
 	command_order(ground, pick_target(screen_pos, ground))
 
 
@@ -456,6 +488,35 @@ func command_order(target: Vector2, target_id: int = 0) -> void:
 	marker.attack = _is_enemy(target_id)
 	add_child(marker)
 	marker.position = Vector3(target.x, 0.05, target.y)
+
+
+## Sets where new ants go. target_id: an aphid (milk it), an enemy (attack
+## it), or your own colony (clears the rally); 0 = that ground point.
+func command_rally(target: Vector2, target_id: int = 0) -> void:
+	match mode:
+		Mode.OFFLINE:
+			sim.queue_rally(local_player, target, target_id)
+		Mode.ONLINE:
+			var seq := client.send_rally(target, target_id)
+			if seq == -1:
+				hud.toast("Not connected")
+				return
+			_sent[seq] = "rally"
+		_:
+			return
+	var own := _own_colony()
+	if not own.is_empty() and target_id == own.id:
+		hud.toast("Rally point cleared")
+		return
+	var marker := MoveMarker.new()
+	marker.attack = _is_enemy(target_id)
+	add_child(marker)
+	marker.position = Vector3(target.x, 0.05, target.y)
+	# Draw the line now; the sim's copy takes over once it applies.
+	_rally_local = target
+	_rally_flash = RALLY_FLASH_S
+	if not own.is_empty():
+		rally_view.show_line(own.pos, target)
 
 
 func command_move(target: Vector2) -> void:
@@ -595,10 +656,56 @@ func _on_group_key(n: int, set_group: bool, add: bool) -> void:
 
 
 func _center_on_colony() -> void:
+	var own := _own_colony()
+	if not own.is_empty():
+		rig.center_on(own.pos)
+
+
+## This player's colony entry in the snapshot, or {} if it fell.
+func _own_colony() -> Dictionary:
 	for s in _snapshot:
 		if s.owner == local_player and int(s.get("kind", 0)) == SimWorld.COLONY:
-			rig.center_on(s.pos)
-			return
+			return s
+	return {}
+
+
+func _over_own_colony(screen_pos: Vector2) -> bool:
+	var own := _own_colony()
+	if own.is_empty():
+		return false
+	var g: Variant = rig.screen_to_ground(screen_pos)
+	return g != null and Vector2(g.x, g.z).distance_to(own.pos) < SimWorld.COLONY_RADIUS + 0.5
+
+
+func _select_colony() -> void:
+	_set_selection([])
+	var own := _own_colony()
+	if own.is_empty():
+		return
+	colony_selected = true
+	if _views.has(own.id):
+		_views[own.id].set_selected(true)
+
+
+## Shows the rally line while the mound is selected, or briefly after setting
+## it. Hidden when there is no rally or the mound is gone.
+func _update_rally_line(delta: float) -> void:
+	_rally_flash = maxf(0.0, _rally_flash - delta)
+	var own := _own_colony()
+	if own.is_empty():
+		colony_selected = false
+		rally_view.hide_line()
+		return
+	var st := _player_state(local_player)
+	if not (colony_selected or _rally_flash > 0.0):
+		rally_view.hide_line()
+	elif _rally_flash > RALLY_FLASH_S - 0.5:
+		# Server round trip: keep the point just set rather than flick back.
+		rally_view.show_line(own.pos, _rally_local)
+	elif st.get("has_rally", false):
+		rally_view.show_line(own.pos, st.rally)
+	elif _rally_flash <= 0.0 or not rally_view.visible:
+		rally_view.hide_line()
 
 
 func _select_all() -> void:
@@ -610,6 +717,11 @@ func _select_all() -> void:
 
 
 func _set_selection(ids: Array) -> void:
+	if colony_selected:
+		colony_selected = false
+		var own := _own_colony()
+		if not own.is_empty() and _views.has(own.id):
+			_views[own.id].set_selected(false)
 	for id in selection:
 		if _views.has(id):
 			_views[id].set_selected(false)
