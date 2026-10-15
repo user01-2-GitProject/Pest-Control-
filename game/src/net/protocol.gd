@@ -6,7 +6,7 @@ extends RefCounted
 ## decode() returns {} for anything malformed (short, oversized, unknown type,
 ## wrong magic), so callers only ever see well-formed messages.
 ##
-##   HELLO     c->s  magic u32, version u16
+##   HELLO     c->s  magic u32, version u16, token u64 (random per install)
 ##   WELCOME   s->c  player u8, tick u32, tick_rate u8, map_half x f32, y f32
 ##   REJECT    s->c  reason u8
 ##   ORDER     c->s  seq u32, target x f32, y f32, target_id u16, count u8, ids u16 * count
@@ -17,6 +17,7 @@ extends RefCounted
 ##                   then count u16 and per entity: id u16, kind u8, owner u8,
 ##                   x i16, y i16, facing u8, hp u8 (1/255 of max), flags u8
 ##   TRAIN     c->s  seq u32, kind u8
+##   NOTICE    s->c  code u8 (host paused/resumed)
 ##
 ## Snapshot positions are fixed point (1/POS_SCALE m), facing is 1/256 turn.
 ## 11 bytes per entity: at the 2 x 50 ant cap plus colonies and aphids that is
@@ -25,7 +26,7 @@ extends RefCounted
 
 const MAGIC := 0x54534550  # "PEST"
 ## Bump on any wire change. Server rejects clients with a different version.
-const VERSION := 2
+const VERSION := 3
 const DEFAULT_PORT := 7777
 
 const HELLO := 1
@@ -35,9 +36,13 @@ const ORDER := 4
 const RESULT := 5
 const SNAPSHOT := 6
 const TRAIN := 7
+const NOTICE := 8
 
 const REJECT_VERSION := 1
 const REJECT_FULL := 2
+
+const NOTICE_HOST_PAUSED := 1
+const NOTICE_HOST_RESUMED := 2
 
 const POS_SCALE := 100.0
 const MAX_SNAPSHOT_UNITS := 1024
@@ -47,10 +52,11 @@ const SNAPSHOT_HEADER := 1 + 4 + 1 + 1 + 1 + 2 * PLAYER_BLOCK + 2
 const ENTITY_BYTES := 11
 
 
-static func hello() -> PackedByteArray:
+static func hello(token: int, version: int = VERSION) -> PackedByteArray:
 	var b := _buf(HELLO)
 	b.put_u32(MAGIC)
-	b.put_u16(VERSION)
+	b.put_u16(version)
+	b.put_u64(token)
 	return b.data_array
 
 
@@ -92,6 +98,12 @@ static func train(seq: int, kind: int) -> PackedByteArray:
 	var b := _buf(TRAIN)
 	b.put_u32(seq)
 	b.put_u8(kind & 0xFF)
+	return b.data_array
+
+
+static func notice(code: int) -> PackedByteArray:
+	var b := _buf(NOTICE)
+	b.put_u8(code)
 	return b.data_array
 
 
@@ -145,13 +157,19 @@ static func decode(data: PackedByteArray) -> Dictionary:
 	var n := data.size()
 	match type:
 		HELLO:
-			if n != 7:
+			# Size is only checked after the version, so an old client still
+			# gets a clean version reject instead of being ignored.
+			if n < 7:
 				return {}
 			var magic := b.get_u32()
 			var version := b.get_u16()
 			if magic != MAGIC:
 				return {}
-			return {"type": HELLO, "version": version}
+			if version != VERSION:
+				return {"type": HELLO, "version": version, "token": 0}
+			if n != 15:
+				return {}
+			return {"type": HELLO, "version": version, "token": b.get_u64()}
 		WELCOME:
 			if n != 15:
 				return {}
@@ -166,6 +184,10 @@ static func decode(data: PackedByteArray) -> Dictionary:
 			if n != 2:
 				return {}
 			return {"type": REJECT, "reason": b.get_u8()}
+		NOTICE:
+			if n != 2:
+				return {}
+			return {"type": NOTICE, "code": b.get_u8()}
 		ORDER:
 			if n < 16:
 				return {}

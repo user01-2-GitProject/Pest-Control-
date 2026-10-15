@@ -322,7 +322,11 @@ func _stats_text() -> String:
 		text += "   vs local bot"
 	if mode == Mode.ONLINE:
 		text += "   P%d   RTT %d ms" % [local_player, client.rtt_ms()]
-		if not client.opponent_present():
+		if client.host_paused:
+			text += "\nHost paused the game"
+		elif client.is_stalled():
+			text += "\nConnection unstable..."
+		elif not client.opponent_present():
 			text += "\nWaiting for opponent" if not client.match_started else "\nOpponent left"
 			if server:
 				text += " - join at " + ", ".join(_lan_addresses())
@@ -333,9 +337,24 @@ func _stats_text() -> String:
 func _lan_addresses() -> PackedStringArray:
 	var out := PackedStringArray()
 	for a in IP.get_local_addresses():
-		if a.begins_with("192.168.") or a.begins_with("10.") or a.begins_with("172."):
+		if a.begins_with("192.168.") or a.begins_with("10."):
 			out.append(a)
+		elif a.begins_with("172."):
+			var second := a.get_slice(".", 1).to_int()
+			if second >= 16 and second <= 31:
+				out.append(a)
 	return out
+
+
+## When hosting, tell the other player before this phone goes to the
+## background (the server stops with the app).
+func _notification(what: int) -> void:
+	if server == null:
+		return
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		server.notify_paused(true)
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		server.notify_paused(false)
 
 
 ## Tap on an own ant selects it. With a selection, a tap on an enemy ant or

@@ -112,9 +112,13 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 - **Interpolation.** Clients draw the world 2 ticks (100 ms) behind the newest
   snapshot and blend between snapshots. That hides jitter up to ~50 ms and one
   lost packet. No extrapolation: if snapshots stop, ants hold still.
-- **Join.** `HELLO` carries a protocol version; mismatched or third clients are
-  rejected with a reason. A player who leaves frees their slot; the next client
-  to join takes over that slot and its ants (stand-in for real reconnect).
+- **Join.** `HELLO` carries a protocol version and a random install token.
+  Mismatched versions and strangers (when both slots are taken) are rejected with
+  a reason. A slot belongs to the first token that took it; the same phone can
+  rejoin it at once, even before its old connection times out.
+- **Dead links.** ENet peer timeout is 5 s (default 30). Clients show
+  "Connection unstable" after 1.5 s without snapshots, and "Host paused" when
+  the hosting phone goes to the background.
 
 ## Known limits
 
