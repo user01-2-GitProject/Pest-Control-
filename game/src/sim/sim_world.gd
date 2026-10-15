@@ -44,7 +44,7 @@ var tick: int = 0
 var map_half_size: Vector2
 var units: Array[Unit] = []
 ## Results of commands applied during the last step():
-## [{ "player", "tick", "ok" }]. Online this becomes the accept/reject reply.
+## [{ "player", "seq", "tick", "ok" }]. The server sends these back as replies.
 var last_results: Array[Dictionary] = []
 
 var _by_id: Dictionary = {}
@@ -76,9 +76,10 @@ func get_unit(id: int) -> Unit:
 
 
 ## Queues a move to apply at the start of the next tick. This is the only
-## entry point for player input, local or (later) from the network.
-func queue_move(player: int, unit_ids: Array, target: Vector2) -> void:
-	_pending.append({"player": player, "ids": unit_ids.duplicate(), "target": target})
+## entry point for player input, local or from the network. `seq` is echoed
+## back in last_results so a client can match the reply to its command.
+func queue_move(player: int, unit_ids: Array, target: Vector2, seq: int = 0) -> void:
+	_pending.append({"player": player, "ids": unit_ids.duplicate(), "target": target, "seq": seq})
 
 
 ## Plain per-unit state for views: they never touch Unit directly, so the
@@ -177,7 +178,7 @@ func _apply_pending() -> void:
 	_pending = []
 	for c in cmds:
 		var ok := issue_move(c.player, c.ids, c.target)
-		last_results.append({"player": c.player, "tick": tick, "ok": ok})
+		last_results.append({"player": c.player, "seq": c.seq, "tick": tick, "ok": ok})
 
 
 func _start_moving(u: Unit) -> void:

@@ -3,10 +3,13 @@ extends Node3D
 ## Placeholder low-poly ant. Reads sim state; never writes it.
 
 const TURN_SPEED := 14.0
+## Body colour per player slot. Player 1 rust red, player 2 dark slate.
+const OWNER_COLORS := {1: Color(0.36, 0.12, 0.07), 2: Color(0.14, 0.17, 0.24)}
 
 static var _meshes: Dictionary = {}
 
 var unit_id: int
+var player := 1
 var _ring: MeshInstance3D
 var _selected := false
 
@@ -33,7 +36,7 @@ func sync(s: Dictionary, alpha: float, delta: float) -> void:
 func _build() -> void:
 	_init_shared()
 	var body := MeshInstance3D.new()
-	body.mesh = _meshes["ant"]
+	body.mesh = _ant_mesh(player)
 	add_child(body)
 	_ring = MeshInstance3D.new()
 	_ring.mesh = _meshes["ring"]
@@ -44,25 +47,8 @@ func _build() -> void:
 
 
 static func _init_shared() -> void:
-	if not _meshes.is_empty():
+	if _meshes.has("ring"):
 		return
-	var body := StandardMaterial3D.new()
-	body.albedo_color = Color(0.36, 0.12, 0.07)
-	body.roughness = 0.6
-
-	# One merged mesh per ant (one draw, one shadow draw). Body runs along +X.
-	var leg := BoxMesh.new()
-	leg.size = Vector3(0.04, 0.04, 0.7)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.append_from(_sphere(0.2), 0, Transform3D(Basis.from_scale(Vector3(1.35, 1, 1)), Vector3(-0.28, 0.22, 0)))
-	st.append_from(_sphere(0.12), 0, Transform3D(Basis(), Vector3(0.02, 0.2, 0)))
-	st.append_from(_sphere(0.14), 0, Transform3D(Basis(), Vector3(0.28, 0.22, 0)))
-	for x in [-0.08, 0.04, 0.16]:
-		st.append_from(leg, 0, Transform3D(Basis(), Vector3(x, 0.12, 0)))
-	st.set_material(body)
-	_meshes["ant"] = st.commit()
-
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	ring_mat.albedo_color = Color(0.4, 1.0, 0.35)
@@ -73,6 +59,30 @@ static func _init_shared() -> void:
 	ring.ring_segments = 4
 	ring.material = ring_mat
 	_meshes["ring"] = ring
+
+
+## One merged mesh per ant (one draw, one shadow draw), shared per owner.
+## Body runs along +X.
+static func _ant_mesh(owner_id: int) -> Mesh:
+	var key := "ant%d" % owner_id
+	if _meshes.has(key):
+		return _meshes[key]
+	var body := StandardMaterial3D.new()
+	body.albedo_color = OWNER_COLORS.get(owner_id, Color(0.5, 0.5, 0.5))
+	body.roughness = 0.6
+
+	var leg := BoxMesh.new()
+	leg.size = Vector3(0.04, 0.04, 0.7)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(_sphere(0.2), 0, Transform3D(Basis.from_scale(Vector3(1.35, 1, 1)), Vector3(-0.28, 0.22, 0)))
+	st.append_from(_sphere(0.12), 0, Transform3D(Basis(), Vector3(0.02, 0.2, 0)))
+	st.append_from(_sphere(0.14), 0, Transform3D(Basis(), Vector3(0.28, 0.22, 0)))
+	for x in [-0.08, 0.04, 0.16]:
+		st.append_from(leg, 0, Transform3D(Basis(), Vector3(x, 0.12, 0)))
+	st.set_material(body)
+	_meshes[key] = st.commit()
+	return _meshes[key]
 
 
 static func _sphere(r: float) -> SphereMesh:
