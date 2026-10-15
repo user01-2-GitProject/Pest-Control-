@@ -68,8 +68,10 @@ func advance(delta: float) -> void:
 	render_tick = minf(render_tick, newest)
 
 
-## Interpolated units at render_tick, in the same shape as SimWorld.snapshot()
-## (prev_pos == pos, so views draw them with alpha 1).
+## Interpolated entities at render_tick, in the same shape as SimWorld.snapshot()
+## (prev_pos == pos, so views draw them with alpha 1). Other fields (hp, flags)
+## come from the older snapshot. An entity missing from it has died or not yet
+## appeared at render time.
 func sample() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if _snaps.is_empty():
@@ -87,11 +89,11 @@ func sample() -> Array[Dictionary]:
 		t = clampf((render_tick - a.tick) / float(b.tick - a.tick), 0.0, 1.0)
 	for id in a.units:
 		var ua: Dictionary = a.units[id]
-		var pos: Vector2 = ua.pos
-		var facing: float = ua.facing
+		var e := ua.duplicate()
 		if not b.is_empty() and b.units.has(id):
 			var ub: Dictionary = b.units[id]
-			pos = pos.lerp(ub.pos, t)
-			facing = lerp_angle(facing, ub.facing, t)
-		out.append({"id": id, "owner": ua.owner, "pos": pos, "prev_pos": pos, "facing": facing})
+			e.pos = (ua.pos as Vector2).lerp(ub.pos, t)
+			e.facing = lerp_angle(ua.facing, ub.facing, t)
+		e.prev_pos = e.pos
+		out.append(e)
 	return out

@@ -33,6 +33,9 @@ jobs:
       - name: Sim tests
         run: godot --headless -s res://tests/test_sim.gd
 
+      - name: Match loop tests (economy, production, combat, victory, bot match, 50v50)
+        run: godot --headless -s res://tests/test_match.gd
+
       - name: Main scene smoke test
         run: |
           godot --headless -s res://tests/smoke_main.gd 2>&1 | tee smoke.log

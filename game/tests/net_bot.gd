@@ -2,8 +2,8 @@ extends SceneTree
 ## Headless test client for the multi-process check: one dedicated server and
 ## two of these, each its own OS process, over real UDP. Each bot joins, waits
 ## for its opponent, moves its own ants to its own target, tries to move the
-## opponent's (must be rejected), and passes once the server shows its ants at
-## the target. Run from game/:
+## opponent's (must be rejected), queues a worker (must be accepted and paid
+## for), and passes once the server shows its ants at the target. Run from game/:
 ##   godot --headless -s res://tests/net_bot.gd -- [--address 127.0.0.1] [--port 7777]
 
 const Client = preload("res://src/net/net_client.gd")
@@ -35,27 +35,32 @@ func _run() -> void:
 	var me := c.player_id
 	print("net_bot: joined as player %d" % me)
 
-	if not await _until(func() -> bool: return c.opponent_present() and c.buffer.sample().size() == 40, deadline):
+	if not await _until(func() -> bool: return c.opponent_present() and c.match_started \
+			and c.buffer.sample().size() == 30, deadline):
 		return _fail("player %d: opponent never appeared" % me)
 
 	var mine: Array = []
 	var theirs: Array = []
 	for s in c.buffer.sample():
-		(mine if s.owner == me else theirs).append(s.id)
+		if s.kind == SimWorld.WORKER or s.kind == SimWorld.SOLDIER:
+			(mine if s.owner == me else theirs).append(s.id)
 	var results := {}
 	c.command_result.connect(func(seq: int, ok: bool) -> void: results[seq] = ok)
 	var target := Vector2(-8.0 if me == 1 else 8.0, 10.0)
 	var ok_seq := c.send_move(mine, target)
 	var bad_seq := c.send_move(theirs, Vector2.ZERO)
+	var train_seq := c.send_train(SimWorld.WORKER)
 
-	if not await _until(func() -> bool: return results.has(ok_seq) and results.has(bad_seq), deadline):
+	if not await _until(func() -> bool: return results.has(ok_seq) and results.has(bad_seq) \
+			and results.has(train_seq), deadline):
 		return _fail("player %d: no command results" % me)
-	if results[ok_seq] != true or results[bad_seq] != false:
-		return _fail("player %d: own move ok=%s, enemy move ok=%s" % [me, results[ok_seq], results[bad_seq]])
+	if results[ok_seq] != true or results[bad_seq] != false or results[train_seq] != true:
+		return _fail("player %d: own move ok=%s, enemy move ok=%s, train ok=%s" % [me, results[ok_seq],
+			results[bad_seq], results[train_seq]])
 
 	var arrived := func() -> bool:
 		for s in c.buffer.sample():
-			if s.owner == me and s.pos.distance_to(target) > 4.0:
+			if s.id in mine and s.pos.distance_to(target) > 4.0:
 				return false
 		return true
 	if not await _until(arrived, deadline):

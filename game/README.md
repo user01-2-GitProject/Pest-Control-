@@ -1,8 +1,29 @@
 # Pest Control: Godot project
 
-Milestone 2: first online play. Two phones each control 20 ants on one flat
-map, against a server that owns the game state. Offline practice still works.
+Milestone 3: first playable match loop (Ants only). Milk aphids for honeydew,
+train workers and soldiers at your colony (cap 50 ants), fight in melee, and win
+by destroying the enemy colony. Play offline against a simple local bot, or
+online against another phone through a server that owns every rule.
 LAN or localhost only: no matchmaking, accounts or internet hosting yet.
+
+## Match rules (placeholder balance, tune from playtests)
+
+| | Cost | Train | HP | Damage / s | Speed |
+|---|---|---|---|---|---|
+| Worker | 50 | 5 s | 40 | 4 | 4.0 m/s |
+| Soldier | 100 | 8 s | 100 | 12 | 3.5 m/s |
+| Colony | | | 1500 | | |
+
+- Start: colony, 6 workers (already milking), 4 soldiers, 100 honeydew.
+- Workers milk an aphid cluster for 2 s, carry 10 honeydew home, repeat.
+- Cost is paid when queued; queue holds 5; queued ants count toward the 50 cap.
+- Idle soldiers attack enemy ants within 6 m (and give up chasing past 9 m).
+  Workers fight only when ordered. A move order holds fire until arrival, so
+  retreating works. An attack on a colony fights ants met on the way.
+- All hits in a tick land together, so two ants can kill each other.
+- Win: destroy the enemy colony. At 10:00 the colony with more health left wins;
+  equal health is a draw.
+- Online, the match clock starts when both players have joined.
 
 ## Open and run
 
@@ -31,6 +52,9 @@ Uses UDP port 7777. A firewall on the host must allow it.
 |---|---|---|
 | Select one ant | Tap it | Left click |
 | Move selection | Tap ground | Left click ground |
+| Attack | With ants selected, tap an enemy ant or colony (red ring) | same |
+| Milk aphids | With workers selected, tap an aphid leaf | same |
+| Train | **Worker 50** / **Soldier 100** buttons (bottom left) | same |
 | Box select | Hold ~0.35 s (ring appears), then drag | Hold left, then drag |
 | Pan | One-finger drag, or two-finger drag | Right or middle drag |
 | Zoom | Pinch | Wheel |
@@ -48,6 +72,7 @@ Uses UDP port 7777. A firewall on the host must allow it.
 
 ```
 src/sim/      SimWorld: rules and state, fixed 20 Hz tick, no nodes. The server runs it.
+src/ai/       BotAI: offline opponent; issues commands through the same queue as players.
 src/net/      Protocol (wire format), GameServer, NetClient, SnapshotBuffer (jitter buffer),
               server_main.gd (headless entry point).
 src/view/     Ant, map and marker visuals. Read sim state, interpolate between ticks.
@@ -63,6 +88,7 @@ tests/        Headless tests (run in CI on every PR).
 cd game
 godot --headless --import
 godot --headless -s res://tests/test_sim.gd
+godot --headless -s res://tests/test_match.gd
 godot --headless -s res://tests/smoke_main.gd
 godot --headless -s res://tests/test_net.gd
 ```
@@ -72,11 +98,15 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Networking model
 
-- **Server-authoritative.** Clients send only move intent (`MOVE`: unit ids + target).
-  The server runs SimWorld and its `issue_move` validation (ownership, list size,
-  finite target), and caps each client at 8 commands per tick.
-- **Snapshots, 20 Hz.** After every tick each client gets the full unit state
-  (8 bytes per unit, ~330 bytes per tick for 40 ants, ~6.6 KB/s down). Sent
+- **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
+  point, optional target id) and `TRAIN` (kind). The server runs SimWorld, whose
+  `issue_order` / `issue_train` check ownership, honeydew, queue, unit cap and
+  match state, and caps each client at 8 commands per tick. Damage, honeydew,
+  cooldowns and victory are computed only on the server.
+- **Snapshots, 20 Hz.** After every tick each client gets the full state: every
+  ant, colony and aphid (11 bytes each with kind, hp and flags) plus both
+  players' economy and the winner. ~0.4 KB per tick at the start, ~1.2 KB at
+  2 x 50 ants (~24 KB/s down). Sent
   unreliable-ordered, so a late snapshot is dropped instead of stalling newer ones.
   Commands, results, join and reject are reliable.
 - **Interpolation.** Clients draw the world 2 ticks (100 ms) behind the newest
@@ -93,10 +123,13 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
   before deciding whether prediction is needed.
 - Online: no player identity, so anyone on the network can take a free slot.
   LAN only; don't expose the port to the internet.
-- Online: full snapshots every tick. Fine for 2 x 20; delta-compress before 2 x 50
-  with combat.
+- Online: full snapshots every tick, ~24 KB/s per client at the cap. Delta-compress
+  if phones on mobile data struggle. Both players' honeydew is visible to both clients.
+- Match loop balance is placeholder. The bot is simple (fixed build, waves of 6).
+- No surrender button or reconnect-by-identity yet.
 - Not yet tested on real phones or a real Wi-Fi network; CI covers localhost UDP only.
 - Movement is straight-line plus overlap push. No pathfinding or obstacles yet (Milestone 2).
-- Overlap check is O(n²); fine for 20 units, needs a spatial hash before 2 x 50.
-- Ants are 7 meshes each; batch or merge before scaling.
+- Overlap and target search use a 2 m grid. CI (desktop) measured ~1 ms per tick
+  for a bot match and ~3 ms average, ~19 ms worst for a 50 v 50 soldier battle.
+  Phones will be slower and are not yet measured.
 - Not yet measured on a phone.

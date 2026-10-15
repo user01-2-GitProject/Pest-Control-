@@ -11,6 +11,8 @@ const Server = preload("res://src/net/game_server.gd")
 const Client = preload("res://src/net/net_client.gd")
 
 const PORT := 47801
+## setup_match(): 8 aphid clusters + 2 colonies + 2 x 10 ants.
+const ENTITIES := 30
 
 var _failures := 0
 
@@ -48,8 +50,11 @@ func _test_roundtrip() -> void:
 		"welcome roundtrip")
 	m = Proto.decode(Proto.reject(Proto.REJECT_FULL))
 	_check(m.get("reason") == Proto.REJECT_FULL, "reject roundtrip")
-	m = Proto.decode(Proto.move(77, [1, 2, 65535], Vector2(-3.5, 9.25)))
-	_check(m.get("seq") == 77 and m.ids == [1, 2, 65535] and m.target == Vector2(-3.5, 9.25), "move roundtrip")
+	m = Proto.decode(Proto.order(77, [1, 2, 65535], Vector2(-3.5, 9.25), 300))
+	_check(m.get("seq") == 77 and m.ids == [1, 2, 65535] and m.target == Vector2(-3.5, 9.25)
+		and m.target_id == 300, "order roundtrip")
+	m = Proto.decode(Proto.train(78, SimWorld.SOLDIER))
+	_check(m.get("type") == Proto.TRAIN and m.seq == 78 and m.kind == SimWorld.SOLDIER, "train roundtrip")
 	m = Proto.decode(Proto.result(77, false, 999))
 	_check(m.get("seq") == 77 and m.ok == false and m.tick == 999, "result roundtrip")
 
@@ -60,16 +65,20 @@ func _test_malformed_rejected() -> void:
 	var hello := Proto.hello()
 	hello[1] ^= 0xFF
 	_check(Proto.decode(hello).is_empty(), "bad magic")
-	var mv := Proto.move(1, [1, 2, 3], Vector2.ZERO)
-	_check(Proto.decode(mv.slice(0, mv.size() - 1)).is_empty(), "truncated move")
+	var mv := Proto.order(1, [1, 2, 3], Vector2.ZERO)
+	_check(Proto.decode(mv.slice(0, mv.size() - 1)).is_empty(), "truncated order")
 	mv.append(0)
-	_check(Proto.decode(mv).is_empty(), "move with trailing bytes")
+	_check(Proto.decode(mv).is_empty(), "order with trailing bytes")
+	var tr := Proto.train(1, 1)
+	tr.append(0)
+	_check(Proto.decode(tr).is_empty(), "train with trailing bytes")
 	var snap := Proto.snapshot(5, 3, [{"id": 1, "owner": 1, "pos": Vector2.ZERO, "facing": 0.0}])
-	snap[6] = 0xFF  # claims 65535+ units
-	snap[7] = 0xFF
+	snap[Proto.SNAPSHOT_HEADER - 2] = 0xFF  # claims 65535+ entities
+	snap[Proto.SNAPSHOT_HEADER - 1] = 0xFF
 	_check(Proto.decode(snap).is_empty(), "snapshot count larger than packet")
-	_check(Proto.move(1, range(300), Vector2.ZERO).is_empty(), "too many ids not encoded")
-	_check(Proto.move(1, [70000], Vector2.ZERO).is_empty(), "id outside u16 not encoded")
+	_check(Proto.order(1, range(300), Vector2.ZERO).is_empty(), "too many ids not encoded")
+	_check(Proto.order(1, [70000], Vector2.ZERO).is_empty(), "id outside u16 not encoded")
+	_check(Proto.order(1, [1], Vector2.ZERO, 70000).is_empty(), "target id outside u16 not encoded")
 	# Random garbage never crashes and never decodes into a MOVE with bad length.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -79,19 +88,30 @@ func _test_malformed_rejected() -> void:
 		for j in junk.size():
 			junk[j] = rng.randi_range(0, 255)
 		var d := Proto.decode(junk)
-		if d.get("type") == Proto.MOVE and junk.size() != 14 + d.ids.size() * 2:
-			_check(false, "garbage decoded as inconsistent MOVE")
+		if d.get("type") == Proto.ORDER and junk.size() != 16 + d.ids.size() * 2:
+			_check(false, "garbage decoded as inconsistent ORDER")
 
 
 func _test_snapshot_quantization() -> void:
 	var units := [
-		{"id": 3, "owner": 2, "pos": Vector2(12.3456, -29.999), "facing": -1.0},
-		{"id": 4, "owner": 1, "pos": Vector2(-400, 400), "facing": 7.0},
+		{"id": 3, "kind": SimWorld.SOLDIER, "owner": 2, "pos": Vector2(12.3456, -29.999), "facing": -1.0,
+			"hp": 0.5, "flags": 3},
+		{"id": 4, "kind": SimWorld.COLONY, "owner": 1, "pos": Vector2(-400, 400), "facing": 7.0,
+			"hp": 1.0, "flags": 0},
 	]
-	var m := Proto.decode(Proto.snapshot(42, 3, units))
+	var states := {1: {"honeydew": 70000, "units": 12, "queue": [SimWorld.SOLDIER, SimWorld.WORKER],
+		"progress": 0.5}}
+	var m := Proto.decode(Proto.snapshot(42, 3, units, 2, true, states))
 	_check(m.get("tick") == 42 and m.players == 3 and m.units.size() == 2, "snapshot header")
+	_check(m.winner == 2 and m.started, "winner and started")
+	var p1: Dictionary = m.states[1]
+	_check(p1.honeydew == 0xFFFF and p1.units == 12 and p1.queue_len == 2 and p1.front == SimWorld.SOLDIER
+		and absf(p1.progress - 0.5) < 0.01, "player 1 economy (honeydew clamps), got %s" % p1)
+	_check(m.states[2].honeydew == 0 and m.states[2].queue_len == 0, "missing player encodes as zeros")
 	var a: Dictionary = m.units[0]
-	_check(a.id == 3 and a.owner == 2, "snapshot ids")
+	_check(a.id == 3 and a.owner == 2 and a.kind == SimWorld.SOLDIER, "snapshot ids and kind")
+	_check(absf(a.hp - 0.5) < 0.01 and a.flags == 3, "hp and flags")
+	_check(Proto.snapshot(1, 0, units).size() == Proto.SNAPSHOT_HEADER + 2 * Proto.ENTITY_BYTES, "documented size")
 	_check(a.pos.distance_to(units[0].pos) < 0.01, "pos within 1 cm, got %s" % a.pos)
 	_check(absf(angle_difference(a.facing, -1.0)) < TAU / 256.0, "facing within 1/256 turn")
 	_check(absf(m.units[1].pos.x) < 330.0, "out-of-range pos clamps instead of wrapping")
@@ -192,13 +212,24 @@ func _test_live_match() -> void:
 	var c2: NetClient = Client.new()
 	root.add_child(c1)
 	root.add_child(c2)
+	var results := {}
+	c1.command_result.connect(func(seq: int, ok: bool) -> void: results[seq] = ok)
+
+	# Alone on the server: the match waits and commands are refused.
 	c1.connect_to("127.0.0.1", PORT)
+	_check(await _wait(func() -> bool: return c1.state == NetClient.State.JOINED and _ids(c1, c1.player_id).size() == 10, 5.0),
+		"first client joins and sees its 10 starting ants")
+	var early := c1.send_move(_ids(c1, c1.player_id), Vector2.ZERO)
+	_check(await _wait(func() -> bool: return results.has(early), 3.0) and results[early] == false,
+		"commands refused before the opponent joins")
+	_check(not c1.match_started and server.sim.tick == 0, "match clock waits for two players")
+
 	c2.connect_to("127.0.0.1", PORT)
 	var both_joined := func() -> bool:
 		return c1.state == NetClient.State.JOINED and c2.state == NetClient.State.JOINED \
-			and c1.opponent_present() and c2.opponent_present() \
-			and c1.buffer.sample().size() == 40 and c2.buffer.sample().size() == 40
-	_check(await _wait(both_joined, 5.0), "two clients join and each sees 40 ants")
+			and c1.opponent_present() and c2.opponent_present() and c1.match_started \
+			and c1.buffer.sample().size() == ENTITIES and c2.buffer.sample().size() == ENTITIES
+	_check(await _wait(both_joined, 5.0), "two clients join and each sees all %d entities" % ENTITIES)
 	_check([c1.player_id, c2.player_id].has(1) and [c1.player_id, c2.player_id].has(2),
 		"distinct player slots (%d, %d)" % [c1.player_id, c2.player_id])
 
@@ -234,8 +265,7 @@ func _test_live_match() -> void:
 	# Each player moves only its own ants; moving the enemy's is rejected.
 	var mine := _ids(c1, c1.player_id)
 	var theirs := _ids(c1, c2.player_id)
-	var results := {}
-	c1.command_result.connect(func(seq: int, ok: bool) -> void: results[seq] = ok)
+	results.clear()
 	var target := Vector2(0, 12)
 	var ok_seq := c1.send_move(mine, target)
 	var bad_seq := c1.send_move(theirs, Vector2(-20, -20))
@@ -245,17 +275,35 @@ func _test_live_match() -> void:
 	_check(results.get(bad_seq) == false, "enemy move rejected")
 	_check(results.get(mixed_seq) == false, "mixed own+enemy move rejected")
 
-	var enemy_start := _pos(c2, theirs[0])
+	# An enemy soldier: idle, so any movement would come from the refused order.
+	var enemy_soldier := -1
+	for e in c2.buffer.sample():
+		if e.id in theirs and e.kind == SimWorld.SOLDIER:
+			enemy_soldier = e.id
+	var enemy_start := _pos(c2, enemy_soldier)
 	var arrived := func() -> bool:
 		for id in mine:
 			if _pos(c2, id).distance_to(target) > 4.0:
 				return false
 		return true
 	_check(await _wait(arrived, 12.0), "player %d's ants arrive, seen by the other client" % c1.player_id)
-	_check(_pos(c2, theirs[0]).distance_to(enemy_start) < 0.5, "enemy ants were not moved")
+	_check(_pos(c2, enemy_soldier).distance_to(enemy_start) < 0.5, "enemy ants were not moved")
 	var s1 := c1.buffer.sample()
 	var s2 := c2.buffer.sample()
-	_check(s1.size() == 40 and s2.size() == 40, "both clients still see all ants")
+	_check(s1.size() == ENTITIES and s2.size() == ENTITIES, "both clients still see everything")
+
+	# Economy and production through the server: workers earn, train spends.
+	var me := c1.player_id
+	var honey: int = c1.player_states[me].honeydew
+	var t_ok := c1.send_train(SimWorld.WORKER)
+	var t_bad := c1.send_train(77)
+	_check(await _wait(func() -> bool: return results.has(t_ok) and results.has(t_bad), 3.0)
+		and results[t_ok] == true and results[t_bad] == false, "train accepted, unknown kind refused")
+	_check(await _wait(func() -> bool: return c2.player_states.get(me, {}).get("queue_len", 0) == 1, 3.0),
+		"queued worker visible to both clients")
+	_check(await _wait(func() -> bool: return _ids(c1, me).size() == 11, 8.0), "trained worker appears")
+	_check(await _wait(func() -> bool: return c1.player_states[me].honeydew > honey - SimWorld.STATS[SimWorld.WORKER].cost, 15.0),
+		"workers deliver honeydew (started %d, now %d)" % [honey, c1.player_states[me].honeydew])
 
 	# Command flood is capped per tick.
 	results.clear()
@@ -283,10 +331,11 @@ func _test_live_match() -> void:
 	server.stop()
 
 
+## Ids of `player`'s ants (not its colony).
 func _ids(c: NetClient, player: int) -> Array:
 	var out: Array = []
 	for s in c.buffer.sample():
-		if s.owner == player:
+		if s.owner == player and (s.kind == SimWorld.WORKER or s.kind == SimWorld.SOLDIER):
 			out.append(s.id)
 	return out
 

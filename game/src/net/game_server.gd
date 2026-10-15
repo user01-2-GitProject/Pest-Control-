@@ -1,14 +1,17 @@
 class_name GameServer
 extends Node
 ## Authoritative match server. Runs SimWorld at its fixed 20 Hz tick over ENet
-## (UDP). Clients only send intent (MOVE); every command goes through
-## SimWorld.issue_move, which checks ownership and limits. After each tick the
+## (UDP). Clients only send intent (ORDER, TRAIN); every command goes through
+## SimWorld.issue_order / issue_train, which check ownership, honeydew, the
+## unit cap and the match state. After each tick the
 ## server sends every joined client a full snapshot (unreliable, ordered:
 ## a late snapshot is dropped rather than delaying newer ones) and the
 ## accept/reject result of each of that client's commands (reliable).
 ##
-## Two player slots. A client that disconnects frees its slot and its ants
-## stay put; the next client to join takes the slot and its ants. That is a
+## The match is set up at start() but the clock only runs once both slots
+## have filled; until then commands are refused. Two player slots. A client
+## that disconnects frees its slot and its ants keep following their last
+## orders; the next client to join takes the slot and its colony. That is a
 ## stand-in for real reconnect until there are player identities.
 ##
 ## Runs headless (src/net/server_main.gd) or inside a phone's game ("Host").
@@ -16,7 +19,6 @@ extends Node
 signal log_line(text: String)
 
 const MAX_PLAYERS := 2
-const START_UNITS := 20
 const MAP_HALF := Vector2(30, 30)
 ## Extra commands in one tick are rejected, so a client can't flood the sim.
 const MAX_COMMANDS_PER_TICK := 8
@@ -39,12 +41,17 @@ var _awaiting_hello: Dictionary = {}
 var _kick_at: Dictionary = {}
 ## peer id -> commands queued this tick
 var _commands_this_tick: Dictionary = {}
-var _spawned_slots: Dictionary = {}
+## True once both players have joined; the sim only steps after that.
+var started := false
+var _announced_winner := false
 
 
 ## Opens the UDP port. Returns OK or the ENet error.
 func start(listen_port: int = Protocol.DEFAULT_PORT, bind_address: String = "*") -> Error:
 	sim = SimWorld.new(MAP_HALF)
+	sim.setup_match()
+	started = false
+	_announced_winner = false
 	_peer = ENetMultiplayerPeer.new()
 	_peer.set_bind_ip(bind_address)
 	# Room for the 2 players plus a few that will be told the server is full.
@@ -96,13 +103,21 @@ func _process(delta: float) -> void:
 
 
 func _tick() -> void:
-	sim.step()
+	if not started and players.size() == MAX_PLAYERS:
+		started = true
+		_log("match started")
+	if started:
+		sim.step()
+	if sim.winner != 0 and not _announced_winner:
+		_announced_winner = true
+		_log("match over: %s" % ("draw" if sim.winner == SimWorld.DRAW else "player %d wins" % sim.winner))
 	_commands_this_tick.clear()
 	for r in sim.last_results:
 		var peer_id := _peer_for_slot(r.player)
 		if peer_id != 0:
 			_send(peer_id, Protocol.result(r.seq, r.ok, r.tick), true)
-	var snap := Protocol.snapshot(sim.tick, players_mask(), sim.snapshot())
+	var states := {1: sim.player_state(1), 2: sim.player_state(2)}
+	var snap := Protocol.snapshot(sim.tick, players_mask(), sim.snapshot(), sim.winner, started, states)
 	for peer_id in players:
 		_send(peer_id, snap, false)
 
@@ -116,8 +131,8 @@ func _read_packets() -> void:
 		match msg.type:
 			Protocol.HELLO:
 				_on_hello(from, msg)
-			Protocol.MOVE:
-				_on_move(from, msg)
+			Protocol.ORDER, Protocol.TRAIN:
+				_on_command(from, msg)
 
 
 func _on_hello(from: int, msg: Dictionary) -> void:
@@ -132,33 +147,24 @@ func _on_hello(from: int, msg: Dictionary) -> void:
 		_reject(from, Protocol.REJECT_FULL)
 		return
 	players[from] = slot
-	if not _spawned_slots.has(slot):
-		_spawn_army(slot)
 	_send(from, Protocol.welcome(slot, sim.tick, SimWorld.TICK_RATE, sim.map_half_size), true)
 	_log("peer %d joined as player %d" % [from, slot])
 
 
-func _on_move(from: int, msg: Dictionary) -> void:
+func _on_command(from: int, msg: Dictionary) -> void:
 	var slot: int = players.get(from, 0)
 	if slot == 0:
 		return
 	var n: int = _commands_this_tick.get(from, 0)
-	if n >= MAX_COMMANDS_PER_TICK:
+	if n >= MAX_COMMANDS_PER_TICK or not started:
 		_send(from, Protocol.result(msg.seq, false, sim.tick), true)
 		return
 	_commands_this_tick[from] = n + 1
-	# Ownership, limits and target validity are all checked by the sim.
-	sim.queue_move(slot, msg.ids, msg.target, msg.seq)
-
-
-func _spawn_army(slot: int) -> void:
-	_spawned_slots[slot] = true
-	# Player 1 starts on the left, player 2 mirrored on the right.
-	var side := -1.0 if slot == 1 else 1.0
-	var cols := 5
-	for i in START_UNITS:
-		var p := Vector2(side * (12.0 + (i % cols) * 1.4), -3.0 + (i / cols) * 1.4)
-		sim.spawn_unit(slot, p)
+	# Ownership, costs, limits and target validity are all checked by the sim.
+	if msg.type == Protocol.TRAIN:
+		sim.queue_train(slot, msg.kind, msg.seq)
+	else:
+		sim.queue_order(slot, msg.ids, msg.target, msg.target_id, msg.seq)
 
 
 func _free_slot() -> int:

@@ -1,15 +1,18 @@
 class_name MoveMarker
 extends MeshInstance3D
-## Short-lived ring that shows where a move command was sent.
+## Short-lived ring that shows where an order was sent.
 
 const LIFETIME := 0.6
+
+## Red for an attack order, green otherwise.
+var attack := false
 
 
 func _ready() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0.4, 1.0, 0.35, 0.9)
+	mat.albedo_color = Color(1.0, 0.3, 0.25, 0.9) if attack else Color(0.4, 1.0, 0.35, 0.9)
 	var ring := TorusMesh.new()
 	ring.inner_radius = 0.7
 	ring.outer_radius = 0.85

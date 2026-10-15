@@ -1,6 +1,6 @@
 class_name NetClient
 extends Node
-## Connects to a GameServer, sends move intent, and buffers snapshots for
+## Connects to a GameServer, sends order and train intent, and buffers snapshots for
 ## smooth drawing. Holds no game rules: what the player sees is the server's
 ## state, ~delay_ticks in the past (see SnapshotBuffer).
 
@@ -17,12 +17,18 @@ const CONNECT_TIMEOUT_MS := 6000
 var state := State.IDLE
 var player_id := 0
 var players_mask := 0
+## From the newest snapshot (not delayed like the drawn units).
+var winner := 0
+var match_started := false
+## player -> {honeydew, units, queue_len, front, progress}
+var player_states: Dictionary = {}
 var map_half := Vector2.ZERO
 var buffer := SnapshotBuffer.new()
 
 var _peer: ENetMultiplayerPeer
 var _seq := 0
 var _started_ms := 0
+var _newest_tick := -1
 
 
 func connect_to(address: String, port: int = Protocol.DEFAULT_PORT) -> Error:
@@ -44,6 +50,10 @@ func close() -> void:
 		_peer = null
 	state = State.CLOSED if state != State.IDLE else State.IDLE
 	player_id = 0
+	winner = 0
+	match_started = false
+	player_states.clear()
+	_newest_tick = -1
 
 
 ## True once both player slots are filled on the server.
@@ -59,16 +69,29 @@ func rtt_ms() -> int:
 	return -1 if p == null else int(p.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME))
 
 
-## Sends a move and returns its seq (to match the command_result), or -1 if it
-## couldn't be sent.
+## Sends an order (see SimWorld.issue_order) and returns its seq, to match
+## the command_result, or -1 if it couldn't be sent.
+func send_order(unit_ids: Array, target: Vector2, target_id: int = 0) -> int:
+	if state != State.JOINED:
+		return -1
+	var data := Protocol.order(_seq + 1, unit_ids, target, target_id)
+	if data.is_empty():
+		return -1
+	_seq += 1
+	_send(data)
+	return _seq
+
+
 func send_move(unit_ids: Array, target: Vector2) -> int:
+	return send_order(unit_ids, target, 0)
+
+
+## Asks the server to train an ant of `kind` at our colony. Returns seq or -1.
+func send_train(kind: int) -> int:
 	if state != State.JOINED:
 		return -1
 	_seq += 1
-	var data := Protocol.move(_seq, unit_ids, target)
-	if data.is_empty():
-		return -1
-	_send(data)
+	_send(Protocol.train(_seq, kind))
 	return _seq
 
 
@@ -119,6 +142,11 @@ func _handle(msg: Dictionary) -> void:
 		Protocol.SNAPSHOT:
 			if state == State.JOINED:
 				players_mask = msg.players
+				if msg.tick >= _newest_tick:
+					_newest_tick = msg.tick
+					winner = msg.winner
+					match_started = msg.started
+					player_states = msg.states
 				buffer.push(msg.tick, msg.units)
 		Protocol.RESULT:
 			if state == State.JOINED:
