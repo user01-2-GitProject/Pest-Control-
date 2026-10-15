@@ -106,16 +106,16 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Networking model
 
-Protocol v3 combines match commands with token-based rejoin, rate limits, and host notices. Older clients must update.
+Protocol v4 combines match commands (including rally points) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
 
 - **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
-  point, optional target id) and `TRAIN` (kind). The server runs SimWorld, whose
-  `issue_order` / `issue_train` check ownership, honeydew, queue, unit cap and
-  match state, and caps each client at 8 commands per tick. Damage, honeydew,
+  point, optional target id), `TRAIN` (kind) and `RALLY` (point, optional
+  target id). The server runs SimWorld, whose `issue_order` / `issue_train` /
+  `issue_rally` check ownership, honeydew, queue, unit cap and match state, and caps each client at 8 commands per tick. Damage, honeydew,
   cooldowns and victory are computed only on the server.
 - **Snapshots, 20 Hz.** After every tick each client gets the full state: every
   ant, colony and aphid (11 bytes each with kind, hp and flags) plus both
-  players' economy and the winner. ~0.4 KB per tick at the start, ~1.2 KB at
+  players' economy, rally points and the winner. ~0.4 KB per tick at the start, ~1.2 KB at
   2 x 50 ants (~24 KB/s down). Sent
   unreliable-ordered, so a late snapshot is dropped instead of stalling newer ones.
   Commands, results, join and reject are reliable.

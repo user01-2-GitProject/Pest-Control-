@@ -173,11 +173,18 @@ func _check_rally(main: Node) -> int:
 	var pc: PcControls = main.pc
 	var col: SimWorld.Colony = main.sim.colonies[main.local_player]
 	var col_sp: Vector2 = main.rig.world_to_screen(Vector3(col.pos.x, 0.2, col.pos.y))
-	if main.pick_unit(col_sp) == -1:
-		pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, true))
-		pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, false))
-	else:
-		main._select_colony()  # An ant is in the way; the click would pick it.
+	# An ant standing by the mound (within the fuzzy pick radius) must not
+	# steal the click from the mound.
+	var ant: SimWorld.Unit = null
+	for u in main.sim.units:
+		if u.owner == main.local_player:
+			ant = u
+			break
+	ant.pos = col.pos + Vector2(SimWorld.COLONY_RADIUS + 0.3, 0)
+	ant.prev_pos = ant.pos
+	await process_frame
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, false))
 	if not main.colony_selected or not main.selection.is_empty():
 		printerr("FAIL: clicking our mound should select it")
 		return fails + 1

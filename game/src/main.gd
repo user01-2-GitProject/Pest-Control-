@@ -10,6 +10,9 @@ enum Mode { MENU, OFFLINE, ONLINE }
 
 const MAP_HALF := Vector2(30, 30)
 const PICK_RADIUS_PX := 40.0
+## Inside your mound's footprint, only an ant this close to the cursor beats
+## selecting the mound (ants crowd its edge).
+const DIRECT_PICK_PX := 14.0
 const MAX_TICKS_PER_FRAME := 5
 ## Second tap of a group key within this many ms centers the camera on it.
 const GROUP_DOUBLE_TAP_MS := 350
@@ -406,12 +409,13 @@ func _notification(what: int) -> void:
 ## Touch: a tap on an own ant selects it; with a selection, a tap elsewhere
 ## orders (see _on_command).
 func _on_tapped(screen_pos: Vector2) -> void:
+	if selection.is_empty() and not colony_selected and _over_own_colony(screen_pos) \
+			and pick_unit(screen_pos, DIRECT_PICK_PX) == -1:
+		_select_colony()
+		return
 	var hit := pick_unit(screen_pos)
 	if hit != -1:
 		_set_selection([hit])
-		return
-	if selection.is_empty() and not colony_selected and _over_own_colony(screen_pos):
-		_select_colony()
 		return
 	_on_command(screen_pos)
 
@@ -421,10 +425,11 @@ func _on_tapped(screen_pos: Vector2) -> void:
 ## A double click selects every own ant of that type on screen.
 ## Clicking your own mound selects it, so right-click sets its rally point.
 func _on_clicked(screen_pos: Vector2, additive: bool, double := false) -> void:
-	var hit := pick_unit(screen_pos)
-	if hit == -1 and not additive and _over_own_colony(screen_pos):
+	if not additive and _over_own_colony(screen_pos) \
+			and pick_unit(screen_pos, DIRECT_PICK_PX) == -1:
 		_select_colony()
 		return
+	var hit := pick_unit(screen_pos)
 	if double and hit != -1:
 		_select_same_kind_on_screen(hit, additive)
 		return
@@ -586,10 +591,10 @@ func _is_enemy(id: int) -> bool:
 	return false
 
 
-## Nearest own unit within PICK_RADIUS_PX of a screen point, or -1.
-func pick_unit(screen_pos: Vector2) -> int:
+## Nearest own unit within `radius` px of a screen point, or -1.
+func pick_unit(screen_pos: Vector2, radius := PICK_RADIUS_PX) -> int:
 	var best := -1
-	var best_d := PICK_RADIUS_PX
+	var best_d := radius
 	for s in _snapshot:
 		if s.owner != local_player or not _is_ant(s):
 			continue
