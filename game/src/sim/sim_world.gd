@@ -35,6 +35,9 @@ class Unit:
 	var moving: bool = false
 	var best_dist: float = 0.0
 	var stall: int = 0
+	## Set when the unit stalled out; it stops returning to its slot until the
+	## next command, so two blocked units can't swap pushes forever.
+	var gave_up: bool = false
 
 
 var tick: int = 0
@@ -118,6 +121,7 @@ func issue_move(player: int, unit_ids: Array, target: Vector2) -> bool:
 				best = i
 		u.target = slots[best]
 		slots.remove_at(best)
+		u.gave_up = false
 		_start_moving(u)
 	return true
 
@@ -146,7 +150,7 @@ func step() -> void:
 
 	for u in units:
 		u.prev_pos = u.pos
-		if not u.moving and u.pos.distance_to(u.target) > RETURN_DISTANCE:
+		if not u.moving and not u.gave_up and u.pos.distance_to(u.target) > RETURN_DISTANCE:
 			_start_moving(u)
 		if not u.moving:
 			continue
@@ -163,7 +167,6 @@ func step() -> void:
 	_resolve_overlaps()
 
 	for u in units:
-		u.pos = clamp_to_map(u.pos)
 		if u.moving:
 			_update_stall(u)
 
@@ -192,7 +195,7 @@ func _update_stall(u: Unit) -> void:
 		u.stall += 1
 		if u.stall >= STALL_TICKS:
 			u.moving = false
-			u.target = u.pos  # Accept this spot so it doesn't retry forever.
+			u.gave_up = true
 
 
 ## Pushes overlapping units apart. O(n^2) is fine for the prototype's 20 units;
@@ -218,6 +221,9 @@ func _resolve_overlaps() -> void:
 					wa = 0.2 if a.moving else 0.8
 				a.pos -= dir * push * wa
 				b.pos += dir * push * (1.0 - wa)
+		# Clamp every pass so a push into a wall moves the other unit instead.
+		for u in units:
+			u.pos = clamp_to_map(u.pos)
 
 
 func clamp_to_map(p: Vector2) -> Vector2:
