@@ -6,6 +6,8 @@ extends Node3D
 @export var min_distance := 8.0
 @export var max_distance := 40.0
 @export var distance := 20.0
+## Keyboard / edge scroll speed, in camera distances per second.
+@export var scroll_speed := 1.1
 
 var bounds := Vector2(30, 30)
 var camera: Camera3D
@@ -42,6 +44,13 @@ func pan_screen(from: Vector2, to: Vector2) -> void:
 	if a == null or b == null:
 		return
 	position += a - b
+	_clamp()
+
+
+## Slides the view along screen axes (dir.x right, dir.y down), faster when
+## zoomed out. The camera never yaws, so screen right is world +X.
+func scroll(dir: Vector2, delta: float) -> void:
+	position += Vector3(dir.x, 0.0, dir.y) * distance * scroll_speed * delta
 	_clamp()
 
 
