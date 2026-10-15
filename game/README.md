@@ -31,7 +31,7 @@ project keeps the Mobile renderer so it can export to phones later.
 ## Open and run
 
 1. Godot 4.7, **Import** `game/project.godot`.
-2. Press **F5**. Current mouse controls are listed below.
+2. Press **F5**. Controls are listed below.
 3. Pick **Play offline**, **Host game**, or type an address and **Join**.
 
 ## Play online (two PCs, same LAN)
@@ -51,20 +51,21 @@ Uses UDP port 7777. A firewall on the host must allow it.
 
 ## Controls
 
-Current controls are touch-first with mouse equivalents. Standard PC RTS controls
-(left-drag box select, right-click move, WASD/edge scroll) are the next change.
+Standard PC RTS controls. Touch still works on touchscreens (tap, drag to pan,
+hold then drag to box select, pinch to zoom) for a later mobile build.
 
-| Action | Touch | Mouse |
-|---|---|---|
-| Select one ant | Tap it | Left click |
-| Move selection | Tap ground | Left click ground |
-| Attack | With ants selected, tap an enemy ant or colony (red ring) | same |
-| Milk aphids | With workers selected, tap an aphid leaf | same |
-| Train | **Worker 50** / **Soldier 100** buttons (bottom left) | same |
-| Box select | Hold ~0.35 s (ring appears), then drag | Hold left, then drag |
-| Pan | One-finger drag, or two-finger drag | Right or middle drag |
-| Zoom | Pinch | Wheel |
-| Select all / clear | **All** / **Clear** buttons | same |
+| Action | Mouse / keyboard |
+|---|---|
+| Select one ant | Left click it (Shift+click adds or removes) |
+| Box select | Left drag (Shift adds to the selection) |
+| Clear selection | Left click empty ground, or Esc |
+| Select all | Ctrl+A, or the **All** button |
+| Move | Right click ground |
+| Attack | Right click an enemy ant or colony (red ring) |
+| Milk aphids | With workers selected, right click an aphid leaf |
+| Train | **Worker 50** / **Soldier 100** buttons (bottom left) |
+| Pan | W A S D or arrow keys, mouse at the screen edge, or middle drag |
+| Zoom | Mouse wheel or trackpad pinch |
 
 ## PC build
 
@@ -79,7 +80,7 @@ src/ai/       BotAI: offline opponent; issues commands through the same queue as
 src/net/      Protocol (wire format), GameServer, NetClient, SnapshotBuffer (jitter buffer),
               server_main.gd (headless entry point).
 src/view/     Ant, map and marker visuals. Read sim state, interpolate between ticks.
-src/input/    Touch gestures and camera rig.
+src/input/    PC mouse/keyboard controls, touch gestures, camera rig.
 src/ui/       HUD: stats, buttons, drag box. Start menu.
 src/main.gd   Wires the layers; selection is client-side only.
 tests/        Headless tests (run in CI on every PR).
@@ -128,7 +129,7 @@ Protocol v3 combines match commands with token-based rejoin, rate limits, and ho
 ## Known limits
 
 - This is an unfinished Ants-only prototype, not the complete RTS.
-- Controls still use touch-first mouse equivalents. Standard PC RTS controls are a follow-up, not implemented by this merge.
+- No control groups, hotkeys for training, or minimap yet.
 - No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
 - Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
 - No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.

@@ -23,6 +23,7 @@ func _run() -> void:
 	main.start_offline()
 	for i in 10:
 		await process_frame
+	failures += await _check_pc_controls(main)
 
 	if main.sim == null or main.sim.units.size() != 20 or main.sim.colonies.size() != 2:
 		printerr("FAIL: expected 2 colonies and 20 ants")
@@ -64,6 +65,104 @@ func _run() -> void:
 
 	print("smoke_main: %s" % ("FAILED (%d)" % failures if failures else "passed"))
 	quit(1 if failures else 0)
+
+
+## Mouse and keyboard, fed as input events into PcControls.
+func _check_pc_controls(main: Node) -> int:
+	var fails := 0
+	var pc: PcControls = main.pc
+	pc._unhandled_input(_key(KEY_A, true, true))
+	if main.selection.size() != 10:
+		printerr("FAIL: Ctrl+A should select our 10 ants, got %d" % main.selection.size())
+		fails += 1
+	pc._unhandled_input(_key(KEY_A, false, true))
+	if main.selection.size() > 0:
+		var markers := _count_markers(main)
+		var center: Vector2 = main.get_viewport().get_visible_rect().size * 0.5
+		pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, center, true))
+		pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, center, false))
+		if _count_markers(main) != markers + 1:
+			printerr("FAIL: right click should order the selection")
+			fails += 1
+	# A drag cut off by focus loss must not leave the box stuck, select
+	# anything, or block orders. Sent through the viewport like real input.
+	var vp: Viewport = main.get_viewport()
+	var center2: Vector2 = vp.get_visible_rect().size * 0.5
+	main._set_selection([])
+	vp.push_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
+	vp.push_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
+	if not pc._boxing:
+		printerr("FAIL: viewport drag should start a box")
+		fails += 1
+	pc.notification(Node.NOTIFICATION_WM_WINDOW_FOCUS_OUT)
+	vp.push_input(_drag(center2, 0))
+	if pc._boxing or pc._left_down:
+		printerr("FAIL: focus loss should cancel the box drag")
+		fails += 1
+	if not main.selection.is_empty():
+		printerr("FAIL: an interrupted drag must not select anything")
+		fails += 1
+	main._select_all()
+	var before := _count_markers(main)
+	vp.push_input(_click(MOUSE_BUTTON_RIGHT, center2, true))
+	vp.push_input(_click(MOUSE_BUTTON_RIGHT, center2, false))
+	if _count_markers(main) != before + 1:
+		printerr("FAIL: right click should order after an interrupted drag")
+		fails += 1
+	# Same, when the release is simply missed (no focus event).
+	vp.push_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
+	vp.push_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
+	vp.push_input(_drag(center2, 0))
+	if pc._boxing or pc._left_down:
+		printerr("FAIL: motion without the left button should cancel the drag")
+		fails += 1
+	if main.selection.size() != 10:
+		printerr("FAIL: a missed release must not change the selection")
+		fails += 1
+	pc._unhandled_input(_key(KEY_ESCAPE, true))
+	if not main.selection.is_empty():
+		printerr("FAIL: Esc should clear the selection")
+		fails += 1
+	var x: float = main.rig.position.x
+	pc._unhandled_input(_key(KEY_D, true))
+	for i in 5:
+		await process_frame
+	pc._unhandled_input(_key(KEY_D, false))
+	if main.rig.position.x <= x:
+		printerr("FAIL: holding D should pan the camera right")
+		fails += 1
+	return fails
+
+
+func _key(code: Key, pressed: bool, ctrl := false) -> InputEventKey:
+	var e := InputEventKey.new()
+	e.keycode = code
+	e.pressed = pressed
+	e.ctrl_pressed = ctrl
+	return e
+
+
+func _click(button: MouseButton, pos: Vector2, pressed: bool) -> InputEventMouseButton:
+	var e := InputEventMouseButton.new()
+	e.button_index = button
+	e.position = pos
+	e.pressed = pressed
+	return e
+
+
+func _drag(pos: Vector2, mask: int) -> InputEventMouseMotion:
+	var e := InputEventMouseMotion.new()
+	e.position = pos
+	e.button_mask = mask
+	return e
+
+
+func _count_markers(main: Node) -> int:
+	var n := 0
+	for c in main.get_children():
+		if c is MoveMarker:
+			n += 1
+	return n
 
 
 ## Host mode: the menu's "Host game" path, plus a second client in this

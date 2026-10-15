@@ -20,6 +20,7 @@ var client: NetClient  # online only
 var server: GameServer  # only when hosting on this device
 var rig: CameraRig
 var controls: TouchControls
+var pc: PcControls
 var hud: Hud
 var menu: Menu
 var selection: Dictionary = {}  # unit id -> true
@@ -65,6 +66,20 @@ func _ready() -> void:
 	controls.pan.connect(rig.pan_screen)
 	controls.pinch.connect(func(f: float, c: Vector2) -> void: rig.zoom_at(f, c))
 	controls.set_process_unhandled_input(false)
+
+	pc = PcControls.new()
+	pc.ui_hit_test = hud.is_over_ui
+	add_child(pc)
+	pc.clicked.connect(_on_clicked)
+	pc.box_changed.connect(hud.set_box)
+	pc.box_finished.connect(_on_box_finished)
+	pc.command.connect(_on_command)
+	pc.pan.connect(rig.pan_screen)
+	pc.scroll.connect(rig.scroll)
+	pc.zoom.connect(func(f: float, c: Vector2) -> void: rig.zoom_at(f, c))
+	pc.select_all.connect(_select_all)
+	pc.clear_selection.connect(func() -> void: _set_selection([]))
+	pc.set_enabled(false)
 
 	menu = Menu.new()
 	add_child(menu)
@@ -144,6 +159,7 @@ func _enter_game() -> void:
 	menu.visible = false
 	hud.visible = true
 	controls.set_process_unhandled_input(true)
+	pc.set_enabled(true)
 
 
 func _back_to_menu(status: String) -> void:
@@ -174,6 +190,7 @@ func _reset() -> void:
 	menu.visible = true
 	hud.visible = false
 	controls.set_process_unhandled_input(false)
+	pc.set_enabled(false)
 
 
 func _process(delta: float) -> void:
@@ -357,13 +374,34 @@ func _notification(what: int) -> void:
 		server.notify_paused(false)
 
 
-## Tap on an own ant selects it. With a selection, a tap on an enemy ant or
-## colony attacks it, on aphids sends workers to milk, anywhere else moves.
+## Touch: a tap on an own ant selects it; with a selection, a tap elsewhere
+## orders (see _on_command).
 func _on_tapped(screen_pos: Vector2) -> void:
 	var hit := pick_unit(screen_pos)
 	if hit != -1:
 		_set_selection([hit])
 		return
+	_on_command(screen_pos)
+
+
+## Mouse left click: select the ant under the cursor (Shift toggles it in the
+## selection). Empty ground clears the selection unless Shift is held.
+func _on_clicked(screen_pos: Vector2, additive: bool) -> void:
+	var hit := pick_unit(screen_pos)
+	if not additive:
+		_set_selection([] if hit == -1 else [hit])
+	elif hit != -1:
+		var ids := selection.keys()
+		if selection.has(hit):
+			ids.erase(hit)
+		else:
+			ids.append(hit)
+		_set_selection(ids)
+
+
+## Orders the selection at a screen point: an enemy ant or colony there is
+## attacked, aphids are milked, anywhere else is a move.
+func _on_command(screen_pos: Vector2) -> void:
 	if selection.is_empty():
 		return
 	var g: Variant = rig.screen_to_ground(screen_pos)
@@ -373,13 +411,13 @@ func _on_tapped(screen_pos: Vector2) -> void:
 	command_order(ground, pick_target(screen_pos, ground))
 
 
-func _on_box_finished(rect: Rect2) -> void:
-	var ids: Array = []
+func _on_box_finished(rect: Rect2, additive := false) -> void:
+	var ids: Array = selection.keys() if additive else []
 	for s in _snapshot:
 		if s.owner != local_player or not _is_ant(s):
 			continue
 		var sp: Variant = rig.world_to_screen(Vector3(s.pos.x, 0.2, s.pos.y))
-		if sp != null and rect.has_point(sp):
+		if sp != null and rect.has_point(sp) and not ids.has(s.id):
 			ids.append(s.id)
 	_set_selection(ids)
 

@@ -7,7 +7,7 @@ extends Node
 ##   one-finger drag           pan camera
 ##   hold, then drag           box select
 ##   two fingers               pan + pinch zoom
-## Desktop (editor testing): left = touch, right/middle drag = pan, wheel = zoom.
+## Mouse and keyboard live in PcControls.
 
 signal tapped(screen_pos: Vector2)
 signal box_changed(rect: Rect2)  ## Empty rect means hide the box.
@@ -20,7 +20,6 @@ enum Mode { NONE, PENDING, PAN, BOX, MULTI, BLOCKED }
 
 const TAP_SLOP := 16.0
 const HOLD_TIME := 0.35
-const WHEEL_STEP := 1.12
 
 ## Returns true if a screen point is over UI, so the world ignores that touch.
 var ui_hit_test: Callable
@@ -45,16 +44,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		_on_touch(event)
 	elif event is InputEventScreenDrag:
 		_on_drag(event)
-	elif event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			pinch.emit(WHEEL_STEP, event.position)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			pinch.emit(1.0 / WHEEL_STEP, event.position)
-	elif event is InputEventMouseMotion:
-		if event.button_mask & (MOUSE_BUTTON_MASK_RIGHT | MOUSE_BUTTON_MASK_MIDDLE):
-			pan.emit(event.position - event.relative, event.position)
-	elif event is InputEventMagnifyGesture:
-		pinch.emit(event.factor, event.position)
 
 
 func _on_touch(e: InputEventScreenTouch) -> void:
