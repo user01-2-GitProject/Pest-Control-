@@ -451,7 +451,7 @@ func _on_command(screen_pos: Vector2) -> void:
 	var ground := Vector2(g.x, g.z)
 	if colony_selected:
 		var own := _own_colony()
-		var on_mound := not own.is_empty() and ground.distance_to(own.pos) < SimWorld.COLONY_RADIUS
+		var on_mound: bool = not own.is_empty() and ground.distance_to(own.pos) < SimWorld.COLONY_RADIUS
 		command_rally(ground, own.id if on_mound else pick_target(screen_pos, ground))
 		return
 	command_order(ground, pick_target(screen_pos, ground))

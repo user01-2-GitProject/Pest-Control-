@@ -39,10 +39,10 @@ func _ready() -> void:
 	pole.height = 1.4
 	pole.radial_segments = 6
 	pole.material = _mat
-	var pi := MeshInstance3D.new()
-	pi.mesh = pole
-	pi.position.y = 0.7
-	_flag.add_child(pi)
+	var pole_mi := MeshInstance3D.new()
+	pole_mi.mesh = pole
+	pole_mi.position.y = 0.7
+	_flag.add_child(pole_mi)
 	var cloth := BoxMesh.new()
 	cloth.size = Vector3(0.6, 0.38, 0.03)
 	cloth.material = _mat
@@ -79,11 +79,11 @@ func show_line(from: Vector2, to: Vector2) -> void:
 	var start := SimWorld.COLONY_RADIUS
 	var stop := length - 0.5
 	var count := maxi(0, int((stop - start) / (DASH + GAP)))
-	var basis := Basis(Vector3.UP, -dir.angle())
+	var rot := Basis(Vector3.UP, -dir.angle())
 	_dashes.multimesh.instance_count = count
 	for i in count:
 		var p := from + dir * (start + DASH * 0.5 + i * (DASH + GAP))
-		_dashes.multimesh.set_instance_transform(i, Transform3D(basis, Vector3(p.x, 0.06, p.y)))
+		_dashes.multimesh.set_instance_transform(i, Transform3D(rot, Vector3(p.x, 0.06, p.y)))
 
 
 func hide_line() -> void:

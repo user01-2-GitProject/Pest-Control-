@@ -346,7 +346,7 @@ func issue_rally(player: int, target: Vector2, target_id: int = 0) -> bool:
 		col.has_rally = false  # Rallying onto the mound itself clears it.
 		col.rally_id = 0
 		return true
-	var keep_id := t is Aphid or ((t is Unit or t is Colony) and t.owner != player)
+	var keep_id: bool = t is Aphid or ((t is Unit or t is Colony) and t.owner != player)
 	col.rally_id = target_id if keep_id else 0
 	col.rally = t.pos if keep_id else clamp_to_map(target)
 	col.has_rally = true
