@@ -47,8 +47,9 @@ func _run() -> void:
 		elif main.sim.units[0].pos.distance_to(start_pos) < 0.1:
 			printerr("FAIL: queued move did not move units")
 			failures += 1
+		var queued: int = main.sim.colonies[1].queue.size()
 		main.command_train(SimWorld.WORKER)
-		if not await _wait(func() -> bool: return main.sim.colonies[1].queue.size() == 1, 3.0):
+		if not await _wait(func() -> bool: return main.sim.colonies[1].queue.size() == queued + 1, 3.0):
 			printerr("FAIL: train button path did not queue a worker")
 			failures += 1
 		main.sim.colonies[2].hp = 0
@@ -124,12 +125,100 @@ func _check_pc_controls(main: Node) -> int:
 		printerr("FAIL: Esc should clear the selection")
 		fails += 1
 	var x: float = main.rig.position.x
-	pc._unhandled_input(_key(KEY_D, true))
+	pc._unhandled_input(_key(KEY_RIGHT, true))
 	for i in 5:
 		await process_frame
-	pc._unhandled_input(_key(KEY_D, false))
+	pc._unhandled_input(_key(KEY_RIGHT, false))
 	if main.rig.position.x <= x:
-		printerr("FAIL: holding D should pan the camera right")
+		printerr("FAIL: holding Right should pan the camera right")
+		fails += 1
+	# Control groups: Ctrl+1 stores, Esc clears, 1 recalls.
+	main._select_all()
+	var group_size: int = main.selection.size()
+	pc._unhandled_input(_key(KEY_1, true, true))
+	pc._unhandled_input(_key(KEY_ESCAPE, true))
+	pc._unhandled_input(_key(KEY_1, true))
+	if main.selection.size() != group_size or group_size == 0:
+		printerr("FAIL: 1 should recall group 1 (%d of %d)" % [main.selection.size(), group_size])
+		fails += 1
+	# Second tap centers the camera on the group.
+	main.rig.position = Vector3(25, 0, 25)
+	pc._unhandled_input(_key(KEY_1, true))
+	if main.rig.position.distance_to(Vector3(25, 0, 25)) < 1.0:
+		printerr("FAIL: double-tapping 1 should center the camera on the group")
+		fails += 1
+	# Space centers on our colony.
+	main.rig.position = Vector3(25, 0, 25)
+	pc._unhandled_input(_key(KEY_SPACE, true))
+	var col: Vector2 = main.sim.colonies[main.local_player].pos
+	if Vector2(main.rig.position.x, main.rig.position.z).distance_to(col) > 0.5:
+		printerr("FAIL: Space should center the camera on our colony")
+		fails += 1
+	# Q trains a worker.
+	var queued: int = main.sim.colonies[main.local_player].queue.size()
+	pc._unhandled_input(_key(KEY_Q, true))
+	if not await _wait(func() -> bool:
+			return main.sim.colonies[main.local_player].queue.size() == queued + 1, 3.0):
+		printerr("FAIL: Q should train a worker")
+		fails += 1
+	fails += await _check_rally(main)
+	main._set_selection([])
+	return fails
+
+
+## Click the mound, right-click the ground: the rally point is set and its
+## line shows. Right-clicking the mound clears it.
+func _check_rally(main: Node) -> int:
+	var fails := 0
+	var pc: PcControls = main.pc
+	var col: SimWorld.Colony = main.sim.colonies[main.local_player]
+	var col_sp: Vector2 = main.rig.world_to_screen(Vector3(col.pos.x, 0.2, col.pos.y))
+	# An ant standing by the mound (within the fuzzy pick radius) must not
+	# steal the click from the mound.
+	var ant: SimWorld.Unit = null
+	for u in main.sim.units:
+		if u.owner == main.local_player:
+			ant = u
+			break
+	ant.pos = col.pos + Vector2(SimWorld.COLONY_RADIUS + 0.3, 0)
+	ant.prev_pos = ant.pos
+	await process_frame
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, col_sp, false))
+	if not main.colony_selected or not main.selection.is_empty():
+		printerr("FAIL: clicking our mound should select it")
+		return fails + 1
+	var target := col.pos + Vector2(6, 0)
+	var sp: Vector2 = main.rig.world_to_screen(Vector3(target.x, 0.0, target.y))
+	var markers := _count_markers(main)
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, sp, false))
+	if _count_markers(main) != markers + 1:
+		printerr("FAIL: right click with the mound selected should show a marker")
+		fails += 1
+	if not await _wait(func() -> bool: return col.has_rally, 3.0):
+		printerr("FAIL: right click with the mound selected should set the rally")
+		return fails + 1
+	if col.rally.distance_to(target) > 0.5:
+		printerr("FAIL: rally at %s, expected near %s" % [col.rally, target])
+		fails += 1
+	await process_frame
+	if main.rally_view.dash_count() == 0:
+		printerr("FAIL: the rally line should show while the mound is selected")
+		fails += 1
+	# Selecting ants deselects the mound; the line fades after a moment.
+	main._select_all()
+	if main.colony_selected:
+		printerr("FAIL: selecting ants should deselect the mound")
+		fails += 1
+	if not await _wait(func() -> bool: return not main.rally_view.visible, 3.0):
+		printerr("FAIL: the rally line should hide once the mound is deselected")
+		fails += 1
+	main._select_colony()
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, col_sp, true))
+	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, col_sp, false))
+	if not await _wait(func() -> bool: return not col.has_rally, 3.0):
+		printerr("FAIL: right-clicking our own mound should clear the rally")
 		fails += 1
 	return fails
 

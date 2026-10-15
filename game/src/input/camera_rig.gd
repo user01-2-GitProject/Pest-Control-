@@ -54,6 +54,12 @@ func scroll(dir: Vector2, delta: float) -> void:
 	_clamp()
 
 
+## Puts a ground point at the center of the view.
+func center_on(ground: Vector2) -> void:
+	position = Vector3(ground.x, 0.0, ground.y)
+	_clamp()
+
+
 ## factor > 1 zooms in, anchored on the screen point `at`.
 func zoom_at(factor: float, at: Vector2) -> void:
 	if factor <= 0.0:

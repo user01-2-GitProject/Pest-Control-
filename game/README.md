@@ -57,14 +57,18 @@ hold then drag to box select, pinch to zoom) for a later mobile build.
 | Action | Mouse / keyboard |
 |---|---|
 | Select one ant | Left click it (Shift+click adds or removes) |
+| Select all of a type on screen | Double click an ant |
 | Box select | Left drag (Shift adds to the selection) |
 | Clear selection | Left click empty ground, or Esc |
 | Select all | Ctrl+A, or the **All** button |
 | Move | Right click ground |
 | Attack | Right click an enemy ant or colony (red ring) |
 | Milk aphids | With workers selected, right click an aphid leaf |
-| Train | **Worker 50** / **Soldier 100** buttons (bottom left) |
-| Pan | W A S D or arrow keys, mouse at the screen edge, or middle drag |
+| Train | **Q** worker, **E** soldier, or the **Worker 50** / **Soldier 100** buttons |
+| Control groups | Ctrl+1–9 sets, Shift+1–9 adds, 1–9 selects; tap twice to jump the camera there |
+| Jump to your colony | Space |
+| Rally point (new ants go there) | Click your mound, then right-click ground, an aphid or an enemy. Right-click the mound to clear |
+| Pan | Arrow keys, mouse at the screen edge, or middle drag |
 | Zoom | Mouse wheel or trackpad pinch |
 
 ## PC build
@@ -102,16 +106,16 @@ separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
 ## Networking model
 
-Protocol v3 combines match commands with token-based rejoin, rate limits, and host notices. Older clients must update.
+Protocol v4 combines match commands (including rally points) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
 
 - **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
-  point, optional target id) and `TRAIN` (kind). The server runs SimWorld, whose
-  `issue_order` / `issue_train` check ownership, honeydew, queue, unit cap and
-  match state, and caps each client at 8 commands per tick. Damage, honeydew,
+  point, optional target id), `TRAIN` (kind) and `RALLY` (point, optional
+  target id). The server runs SimWorld, whose `issue_order` / `issue_train` /
+  `issue_rally` check ownership, honeydew, queue, unit cap and match state, and caps each client at 8 commands per tick. Damage, honeydew,
   cooldowns and victory are computed only on the server.
 - **Snapshots, 20 Hz.** After every tick each client gets the full state: every
   ant, colony and aphid (11 bytes each with kind, hp and flags) plus both
-  players' economy and the winner. ~0.4 KB per tick at the start, ~1.2 KB at
+  players' economy, rally points and the winner. ~0.4 KB per tick at the start, ~1.2 KB at
   2 x 50 ants (~24 KB/s down). Sent
   unreliable-ordered, so a late snapshot is dropped instead of stalling newer ones.
   Commands, results, join and reject are reliable.
@@ -129,7 +133,7 @@ Protocol v3 combines match commands with token-based rejoin, rate limits, and ho
 ## Known limits
 
 - This is an unfinished Ants-only prototype, not the complete RTS.
-- No control groups, hotkeys for training, or minimap yet.
+- No attack-move, stop/hold, or minimap yet. W A S D panning is off so those can use letter keys (`PAN_WITH_WASD` in `pc_controls.gd` turns it back on).
 - No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
 - Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
 - No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.

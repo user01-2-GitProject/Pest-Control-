@@ -61,6 +61,11 @@ func _test_roundtrip() -> void:
 	m = Proto.decode(Proto.result(77, false, 999))
 	_check(m.get("seq") == 77 and m.ok == false and m.tick == 999, "result roundtrip")
 
+	var r := Proto.decode(Proto.rally(77, Vector2(3.5, -2.25), 41))
+	_check(r.get("type") == Proto.RALLY and r.seq == 77 and r.target == Vector2(3.5, -2.25)
+		and r.target_id == 41, "rally round trip")
+	_check(Proto.decode(Proto.rally(1, Vector2.ZERO).slice(0, 14)).is_empty(), "short rally rejected")
+	_check(Proto.rally(1, Vector2.ZERO, 70000).is_empty(), "rally target id out of range not encoded")
 
 func _test_malformed_rejected() -> void:
 	_check(Proto.decode(PackedByteArray()).is_empty(), "empty packet")
@@ -111,14 +116,16 @@ func _test_snapshot_quantization() -> void:
 			"hp": 1.0, "flags": 0},
 	]
 	var states := {1: {"honeydew": 70000, "units": 12, "queue": [SimWorld.SOLDIER, SimWorld.WORKER],
-		"progress": 0.5}}
+		"progress": 0.5, "has_rally": true, "rally": Vector2(-12.345, 6.5)}}
 	var m := Proto.decode(Proto.snapshot(42, 3, units, 2, true, states))
 	_check(m.get("tick") == 42 and m.players == 3 and m.units.size() == 2, "snapshot header")
 	_check(m.winner == 2 and m.started, "winner and started")
 	var p1: Dictionary = m.states[1]
 	_check(p1.honeydew == 0xFFFF and p1.units == 12 and p1.queue_len == 2 and p1.front == SimWorld.SOLDIER
 		and absf(p1.progress - 0.5) < 0.01, "player 1 economy (honeydew clamps), got %s" % p1)
-	_check(m.states[2].honeydew == 0 and m.states[2].queue_len == 0, "missing player encodes as zeros")
+	_check(p1.has_rally and p1.rally.distance_to(Vector2(-12.345, 6.5)) < 0.01, "rally point round trip")
+	_check(m.states[2].honeydew == 0 and m.states[2].queue_len == 0 and not m.states[2].has_rally,
+		"missing player encodes as zeros")
 	var a: Dictionary = m.units[0]
 	_check(a.id == 3 and a.owner == 2 and a.kind == SimWorld.SOLDIER, "snapshot ids and kind")
 	_check(absf(a.hp - 0.5) < 0.01 and a.flags == 3, "hp and flags")

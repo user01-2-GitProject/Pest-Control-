@@ -3,17 +3,23 @@ extends Node
 ## Standard PC RTS mouse and keyboard controls.
 ##
 ##   left click             select ant (Shift: add/remove); empty ground clears
+##   double click           select all your ants of that type on screen
 ##   left drag              box select (Shift: add to selection)
 ##   right click            order selection: move, attack, or milk
-##   W A S D / arrows       pan camera; also mouse at the screen edge
+##   arrows                 pan camera; also mouse at the screen edge
+##                          (W A S D too while PAN_WITH_WASD is on)
 ##   middle drag            pan camera (grab the ground)
 ##   wheel / trackpad pinch zoom at the cursor
 ##   Ctrl+A / Esc           select all / clear selection
+##   Ctrl+1-9 / Shift+1-9   set / add to control group
+##   1-9, twice             select group; second tap centers the camera on it
+##   Q / E                  train worker / soldier
+##   Space                  center the camera on your colony
 ##
 ## Touch input stays in TouchControls; this node only reads mouse and keys.
 ## It reports gestures as signals and never touches game state itself.
 
-signal clicked(screen_pos: Vector2, additive: bool)
+signal clicked(screen_pos: Vector2, additive: bool, double: bool)
 signal box_changed(rect: Rect2)  ## Empty rect means hide the box.
 signal box_finished(rect: Rect2, additive: bool)
 signal command(screen_pos: Vector2)
@@ -22,10 +28,16 @@ signal scroll(dir: Vector2, delta: float)  ## dir in screen axes, length <= 1.
 signal zoom(factor: float, at: Vector2)
 signal select_all
 signal clear_selection
+signal group_key(n: int, set_group: bool, add: bool)
+signal train(kind: int)
+signal home
 
 const DRAG_SLOP := 6.0
 const WHEEL_STEP := 1.12
 const EDGE_PX := 8.0
+## W A S D also pan. Off by default so letters are free for unit hotkeys
+## (attack-move, stop, hold); see game/README.md.
+const PAN_WITH_WASD := false
 
 ## Returns true if a screen point is over UI, so the world ignores that click.
 var ui_hit_test: Callable
@@ -36,6 +48,7 @@ var _held := {}  # keycode -> true
 var _left_down := false
 var _boxing := false
 var _start := Vector2.ZERO
+var _double := false
 
 
 func _ready() -> void:
@@ -69,13 +82,13 @@ func _reset_pointer() -> void:
 
 func _process(delta: float) -> void:
 	var dir := Vector2.ZERO
-	if _held.has(KEY_A) or _held.has(KEY_LEFT):
+	if _held.has(KEY_LEFT):
 		dir.x -= 1.0
-	if _held.has(KEY_D) or _held.has(KEY_RIGHT):
+	if _held.has(KEY_RIGHT):
 		dir.x += 1.0
-	if _held.has(KEY_W) or _held.has(KEY_UP):
+	if _held.has(KEY_UP):
 		dir.y -= 1.0
-	if _held.has(KEY_S) or _held.has(KEY_DOWN):
+	if _held.has(KEY_DOWN):
 		dir.y += 1.0
 	if dir == Vector2.ZERO and edge_scroll and not _boxing and DisplayServer.window_is_focused():
 		dir = _edge_dir()
@@ -121,8 +134,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_key(e: InputEventKey) -> void:
 	if e.echo:
 		return
-	var k := e.keycode
-	if k in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+	var k: int = e.keycode
+	if PAN_WITH_WASD:
+		k = {KEY_W: KEY_UP, KEY_A: KEY_LEFT, KEY_S: KEY_DOWN, KEY_D: KEY_RIGHT}.get(k, k)
+	if k in [KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 		# Ctrl+A is select all, not a pan.
 		if e.pressed and not (e.ctrl_pressed or e.meta_pressed):
 			_held[k] = true
@@ -130,10 +145,21 @@ func _on_key(e: InputEventKey) -> void:
 			_held.erase(k)
 	if not e.pressed:
 		return
-	if k == KEY_A and (e.ctrl_pressed or e.meta_pressed):
+	var ctrl := e.ctrl_pressed or e.meta_pressed
+	if e.keycode == KEY_A and ctrl:
 		select_all.emit()
 	elif k == KEY_ESCAPE:
 		clear_selection.emit()
+	elif k >= KEY_1 and k <= KEY_9:
+		group_key.emit(k - KEY_0, ctrl, e.shift_pressed and not ctrl)
+	elif ctrl:
+		return
+	elif k == KEY_Q:
+		train.emit(SimWorld.WORKER)
+	elif k == KEY_E:
+		train.emit(SimWorld.SOLDIER)
+	elif k == KEY_SPACE:
+		home.emit()
 
 
 func _on_button(e: InputEventMouseButton) -> void:
@@ -144,6 +170,7 @@ func _on_button(e: InputEventMouseButton) -> void:
 					return
 				_left_down = true
 				_boxing = false
+				_double = e.double_click
 				_start = e.position
 			elif _left_down:
 				_left_down = false
@@ -152,7 +179,7 @@ func _on_button(e: InputEventMouseButton) -> void:
 					box_changed.emit(Rect2())
 					box_finished.emit(_rect(_start, e.position), e.shift_pressed)
 				else:
-					clicked.emit(e.position, e.shift_pressed)
+					clicked.emit(e.position, e.shift_pressed, _double)
 		MOUSE_BUTTON_RIGHT:
 			if e.pressed and not _boxing:
 				if ui_hit_test.is_valid() and ui_hit_test.call(e.position):

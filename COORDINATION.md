@@ -8,7 +8,7 @@ Git stores the handoff; it does not automatically wake or notify either agent. C
 
 - PC-first Godot RTS; mobile is deferred.
 - Main includes the integrated Ants match prototype from PR #7: Honeydew gathering, training, combat, victory, offline bot, and LAN server-authoritative play.
-- Main is unfinished. Standard PC input is proposed in PR #8; do not describe it as merged until GitHub confirms that.
+- Main is unfinished. Standard PC input merged in PR #8 (54ac87f); Jimmy playtested it on desktop (2026-10-15, "controls all work").
 - Low art target: clean graphic/vector treatment. High: tactile clay/sculpted treatment. Neither setting is implemented.
 - Factions retain independent identities and recognizable insect anatomy. Share gameplay visibility and collision rules across graphics settings.
 - Jimmy tested the earlier #3 movement prototype. Local and GitHub headless tests passed for #7; that is not visual or full playtest acceptance.
@@ -17,7 +17,8 @@ Git stores the handoff; it does not automatically wake or notify either agent. C
 
 | ID | Owner | Work / status | Files or area | Next step / evidence |
 |---|---|---|---|---|
-| PC-INPUT | Claude | PR #8 open; Codex review needs a focus-loss fix | README.md, game/README.md, game/project.godot, game/src/input/pc_controls.gd, game/src/input/camera_rig.gd, game/src/input/touch_controls.gd, game/src/main.gd, game/tests/smoke_main.gd | Address HANDOFF-001 and request re-review of the new SHA. |
+| PC-INPUT-2 | Claude | Control groups, Q/E training hotkeys, double-click select type, Space to colony; arrow keys pan (WASD off pending Jimmy's call). Rally points with a StarCraft-style line (protocol v4). PR #10 | README.md, game/README.md, game/src/input/*, game/src/main.gd, game/src/ui/hud.gd, game/src/view/colony_view.gd, game/src/view/rally_view.gd, game/src/sim/sim_world.gd, game/src/net/*, game/tests/*, COORDINATION.md | Codex review of PR #10. |
+| RTS-ORDERS | Claude | Planned next: attack-move, stop, hold (rally points moved into PR #10). Needs sim + protocol changes | game/src/sim/sim_world.gd, game/src/net/protocol.gd, game/src/net/game_server.gd, game/src/net/net_client.gd, game/src/main.gd, game/src/input/pc_controls.gd, tests | Start after PC-INPUT-2 merges. |
 | VISUAL-01 | Codex | Art direction agreed; next production batch not yet started | Planned new concept/asset files; no runtime files claimed yet | Prepare desktop HUD, selection/command feedback, and resource-icon studies consistent with Low/High targets. Record exact paths before implementation. |
 | COORD-01 | Codex | Establishing this board and agent entry-point links | COORDINATION.md, AGENTS.md, CLAUDE.md, COLLABORATION.md | Publish through a documentation PR; both agents may maintain their entries afterward. |
 
@@ -27,7 +28,7 @@ Claims are coordination aids, not permanent locks. Verify the live PR file list.
 
 ### HANDOFF-001 — Codex → Claude: PR #8 focus-loss recovery
 
-- **Status:** open; awaiting implementation and re-review.
+- **Status:** resolved. Fix e92fae7, viewport-input regression d52ba74, CI green; Codex re-review at d52ba74: ready to merge. Merged in PR #8 (54ac87f).
 - **Reviewed revision:** 96588e51856722fd03227dea80a832170bd603b1.
 - **PR:** [#8 — Standard PC RTS controls](https://github.com/user01-2-GitProject/Pest-Control-/pull/8).
 - **Finding:** game/src/input/pc_controls.gd:45–47 clears held keys on focus loss but leaves the selection drag active.
@@ -57,3 +58,8 @@ Claims are coordination aids, not permanent locks. Verify the live PR file list.
 - Verified simulation, match rules, scene smoke, network, and separate-process UDP tests locally and in GitHub CI. External Kilo review remained queued and was not counted as completed.
 - Reviewed #8 at 96588e5; one reproduced focus-loss bug sent to Claude in a GitHub review. No gameplay files changed by Codex during this review.
 - Created this shared board. Visual direction remains the agreed Low graphic/vector and High clay/sculpted targets; implementation is still pending.
+
+### 2026-10-15 — Claude
+
+- PR #8 (standard PC controls) merged after HANDOFF-001; Jimmy's desktop playtest passed. Jimmy asked for rally points, hotkeys and similar next.
+- Started PC-INPUT-2 (client-side only: groups, hotkeys, double-click). RTS-ORDERS follows and will bump the protocol version.

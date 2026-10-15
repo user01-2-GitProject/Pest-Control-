@@ -1,7 +1,7 @@
 class_name GameServer
 extends Node
 ## Authoritative match server. Runs SimWorld at its fixed 20 Hz tick over ENet
-## (UDP). Clients only send intent (ORDER, TRAIN); every command goes through
+## (UDP). Clients only send intent (ORDER, TRAIN, RALLY); every command goes through
 ## SimWorld.issue_order / issue_train, which check ownership, honeydew, the
 ## unit cap and the match state. After each tick the
 ## server sends every joined client a full snapshot (unreliable, ordered:
@@ -176,7 +176,7 @@ func _read_packets() -> void:
 		match msg.type:
 			Protocol.HELLO:
 				_on_hello(from, msg)
-			Protocol.ORDER, Protocol.TRAIN:
+			Protocol.ORDER, Protocol.TRAIN, Protocol.RALLY:
 				_on_command(from, msg)
 
 
@@ -221,6 +221,8 @@ func _on_command(from: int, msg: Dictionary) -> void:
 	# Ownership, costs, limits and target validity are all checked by the sim.
 	if msg.type == Protocol.TRAIN:
 		sim.queue_train(slot, msg.kind, msg.seq)
+	elif msg.type == Protocol.RALLY:
+		sim.queue_rally(slot, msg.target, msg.target_id, msg.seq)
 	else:
 		sim.queue_order(slot, msg.ids, msg.target, msg.target_id, msg.seq)
 
