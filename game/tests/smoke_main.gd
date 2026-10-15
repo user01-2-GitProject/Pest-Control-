@@ -84,27 +84,40 @@ func _check_pc_controls(main: Node) -> int:
 		if _count_markers(main) != markers + 1:
 			printerr("FAIL: right click should order the selection")
 			fails += 1
-	# A drag cut off by focus loss must not leave the box stuck or block orders.
-	var center2: Vector2 = main.get_viewport().get_visible_rect().size * 0.5
-	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
-	pc._unhandled_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
+	# A drag cut off by focus loss must not leave the box stuck, select
+	# anything, or block orders. Sent through the viewport like real input.
+	var vp: Viewport = main.get_viewport()
+	var center2: Vector2 = vp.get_visible_rect().size * 0.5
+	main._set_selection([])
+	vp.push_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
+	vp.push_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
+	if not pc._boxing:
+		printerr("FAIL: viewport drag should start a box")
+		fails += 1
 	pc.notification(Node.NOTIFICATION_WM_WINDOW_FOCUS_OUT)
-	pc._unhandled_input(_drag(center2, 0))
+	vp.push_input(_drag(center2, 0))
 	if pc._boxing or pc._left_down:
 		printerr("FAIL: focus loss should cancel the box drag")
 		fails += 1
+	if not main.selection.is_empty():
+		printerr("FAIL: an interrupted drag must not select anything")
+		fails += 1
 	main._select_all()
 	var before := _count_markers(main)
-	pc._unhandled_input(_click(MOUSE_BUTTON_RIGHT, center2, true))
+	vp.push_input(_click(MOUSE_BUTTON_RIGHT, center2, true))
+	vp.push_input(_click(MOUSE_BUTTON_RIGHT, center2, false))
 	if _count_markers(main) != before + 1:
 		printerr("FAIL: right click should order after an interrupted drag")
 		fails += 1
 	# Same, when the release is simply missed (no focus event).
-	pc._unhandled_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
-	pc._unhandled_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
-	pc._unhandled_input(_drag(center2, 0))
+	vp.push_input(_click(MOUSE_BUTTON_LEFT, center2 + Vector2(-200, -150), true))
+	vp.push_input(_drag(center2 + Vector2(-100, -50), MOUSE_BUTTON_MASK_LEFT))
+	vp.push_input(_drag(center2, 0))
 	if pc._boxing or pc._left_down:
 		printerr("FAIL: motion without the left button should cancel the drag")
+		fails += 1
+	if main.selection.size() != 10:
+		printerr("FAIL: a missed release must not change the selection")
 		fails += 1
 	pc._unhandled_input(_key(KEY_ESCAPE, true))
 	if not main.selection.is_empty():
