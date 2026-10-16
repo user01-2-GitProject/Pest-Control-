@@ -100,6 +100,10 @@ func _ready() -> void:
 	pc.group_key.connect(_on_group_key)
 	pc.train.connect(command_train)
 	pc.home.connect(_center_on_colony)
+	pc.attack_key.connect(_on_attack_key)
+	pc.attack_target.connect(_on_attack_target)
+	pc.stop_key.connect(func() -> void: _order_mode(SimWorld.MODE_STOP))
+	pc.hold_key.connect(func() -> void: _order_mode(SimWorld.MODE_HOLD))
 	pc.set_enabled(false)
 
 	menu = Menu.new()
@@ -476,21 +480,26 @@ func _on_box_finished(rect: Rect2, additive := false) -> void:
 ## Sends the order to the sim (offline) or the server (online). Either applies
 ## it on its next tick. The marker shows at once; a rejection comes back as a
 ## result and shows a toast.
-func command_order(target: Vector2, target_id: int = 0) -> void:
+## `order_mode` is a SimWorld.MODE_*; stop and hold show no marker.
+func command_order(target: Vector2, target_id: int = 0, order_mode := SimWorld.MODE_NORMAL) -> void:
 	var ids := selection.keys()
+	if ids.is_empty():
+		return
 	match mode:
 		Mode.OFFLINE:
-			sim.queue_order(local_player, ids, target, target_id)
+			sim.queue_order(local_player, ids, target, target_id, 0, order_mode)
 		Mode.ONLINE:
-			var seq := client.send_order(ids, target, target_id)
+			var seq := client.send_order(ids, target, target_id, order_mode)
 			if seq == -1:
 				hud.toast("Not connected")
 				return
 			_sent[seq] = "order"
 		_:
 			return
+	if order_mode == SimWorld.MODE_STOP or order_mode == SimWorld.MODE_HOLD:
+		return
 	var marker := MoveMarker.new()
-	marker.attack = _is_enemy(target_id)
+	marker.attack = order_mode == SimWorld.MODE_ATTACK_MOVE or _is_enemy(target_id)
 	add_child(marker)
 	marker.position = Vector3(target.x, 0.05, target.y)
 
@@ -522,6 +531,33 @@ func command_rally(target: Vector2, target_id: int = 0) -> void:
 	_rally_flash = RALLY_FLASH_S
 	if not own.is_empty():
 		rally_view.show_line(own.pos, target)
+
+
+## A: with ants selected, the next left click places an attack-move.
+func _on_attack_key() -> void:
+	if selection.is_empty():
+		return
+	pc.start_targeting()
+	hud.toast("Attack-move: left-click a spot")
+
+
+## Left click after A: an enemy there is attacked; anywhere else is an
+## attack-move (fight anything met on the way).
+func _on_attack_target(screen_pos: Vector2) -> void:
+	var g: Variant = rig.screen_to_ground(screen_pos)
+	if g == null or selection.is_empty():
+		return
+	var ground := Vector2(g.x, g.z)
+	var tid := pick_target(screen_pos, ground)
+	if _is_enemy(tid):
+		command_order(ground, tid)
+	else:
+		command_order(ground, 0, SimWorld.MODE_ATTACK_MOVE)
+
+
+## S / H: stop or hold position for the selection.
+func _order_mode(order_mode: int) -> void:
+	command_order(Vector2.ZERO, 0, order_mode)
 
 
 func command_move(target: Vector2) -> void:

@@ -15,6 +15,9 @@ extends Node
 ##   Ctrl+1-9 / Shift+1-9   set / add to control group
 ##   1-9, twice             select group; second tap centers the camera on it
 ##   Q / E                  train worker / soldier
+##   A, then left click     attack-move there (on an enemy: attack it);
+##                          right click or Esc cancels
+##   S / H                  stop / hold position
 ##   Backspace              center the camera on your colony
 ##
 ## Touch input stays in TouchControls; this node only reads mouse and keys.
@@ -32,6 +35,11 @@ signal clear_selection
 signal group_key(n: int, set_group: bool, add: bool)
 signal train(kind: int)
 signal home
+signal attack_key  ## main decides whether to start targeting (needs a selection)
+signal attack_target(screen_pos: Vector2)
+signal targeting_ended
+signal stop_key
+signal hold_key
 
 const DRAG_SLOP := 6.0
 const WHEEL_STEP := 1.12
@@ -51,6 +59,9 @@ var _boxing := false
 var _start := Vector2.ZERO
 var _double := false
 var _space_pan := false  # Space held: mouse motion grabs and drags the ground
+## Waiting for the left click that places an attack-move (after A).
+var targeting := false
+var _swallow_release := false
 
 
 func _ready() -> void:
@@ -73,6 +84,8 @@ func set_enabled(on: bool) -> void:
 func _reset_input() -> void:
 	_held.clear()
 	_space_pan = false
+	_swallow_release = false
+	cancel_targeting()
 	_reset_pointer()
 
 
@@ -156,7 +169,10 @@ func _on_key(e: InputEventKey) -> void:
 	if e.keycode == KEY_A and ctrl:
 		select_all.emit()
 	elif k == KEY_ESCAPE:
-		clear_selection.emit()
+		if targeting:
+			cancel_targeting()
+		else:
+			clear_selection.emit()
 	elif k >= KEY_1 and k <= KEY_9:
 		group_key.emit(k - KEY_0, ctrl, e.shift_pressed and not ctrl)
 	elif ctrl:
@@ -167,6 +183,12 @@ func _on_key(e: InputEventKey) -> void:
 		train.emit(SimWorld.SOLDIER)
 	elif k == KEY_BACKSPACE:
 		home.emit()
+	elif k == KEY_A:
+		attack_key.emit()
+	elif k == KEY_S:
+		stop_key.emit()
+	elif k == KEY_H:
+		hold_key.emit()
 
 
 func _on_button(e: InputEventMouseButton) -> void:
@@ -175,10 +197,17 @@ func _on_button(e: InputEventMouseButton) -> void:
 			if e.pressed:
 				if ui_hit_test.is_valid() and ui_hit_test.call(e.position):
 					return
+				if targeting:
+					_end_targeting()
+					_swallow_release = true
+					attack_target.emit(e.position)
+					return
 				_left_down = true
 				_boxing = false
 				_double = e.double_click
 				_start = e.position
+			elif _swallow_release:
+				_swallow_release = false
 			elif _left_down:
 				_left_down = false
 				if _boxing:
@@ -188,7 +217,9 @@ func _on_button(e: InputEventMouseButton) -> void:
 				else:
 					clicked.emit(e.position, e.shift_pressed, _double)
 		MOUSE_BUTTON_RIGHT:
-			if e.pressed and not _boxing:
+			if e.pressed and targeting:
+				cancel_targeting()  # Right click backs out, like other RTS games.
+			elif e.pressed and not _boxing:
 				if ui_hit_test.is_valid() and ui_hit_test.call(e.position):
 					return
 				command.emit(e.position)
@@ -212,6 +243,24 @@ func _on_motion(e: InputEventMouseMotion) -> void:
 		_boxing = true
 	if _boxing:
 		box_changed.emit(_rect(_start, e.position))
+
+
+## Waits for a left click to place an attack-move; shows a crosshair.
+func start_targeting() -> void:
+	targeting = true
+	_reset_pointer()
+	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+
+
+func cancel_targeting() -> void:
+	if targeting:
+		_end_targeting()
+
+
+func _end_targeting() -> void:
+	targeting = false
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	targeting_ended.emit()
 
 
 static func _rect(a: Vector2, b: Vector2) -> Rect2:

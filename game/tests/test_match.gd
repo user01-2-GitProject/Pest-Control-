@@ -15,6 +15,8 @@ func _initialize() -> void:
 	_test_train_spends_and_spawns()
 	_test_train_rejections()
 	_test_rally_point()
+	_test_attack_move()
+	_test_stop_and_hold()
 	_test_unit_cap()
 	_test_soldier_kills_worker()
 	_test_simultaneous_kill()
@@ -134,6 +136,49 @@ func _test_rally_point() -> void:
 	_check(sim.issue_rally(1, col.pos, col.id) and not sim.player_state(1).has_rally, "own mound clears rally")
 	_check(not sim.issue_rally(1, Vector2(NAN, 0)), "non-finite rally rejected")
 	_check(not sim.issue_rally(3, Vector2.ZERO), "rally without a colony rejected")
+
+
+func _test_attack_move() -> void:
+	var sim := Sim.new()
+	var s := sim.spawn_unit(1, Vector2(0, 0), Sim.SOLDIER)
+	var w := sim.spawn_unit(2, Vector2(10, 0.5), Sim.WORKER)
+	_check(sim.issue_order(1, [s.id], Vector2(20, 0), 0, Sim.MODE_ATTACK_MOVE), "attack-move accepted")
+	_run(sim, Sim.TICK_RATE * 14)
+	_check(sim.get_unit(w.id) == null, "attack-move fights the enemy on the way")
+	_check(s.pos.distance_to(Vector2(20, 0)) < 1.0, "then carries on to the point (at %s)" % s.pos)
+	# Workers fight on attack-move too; a plain move walks past.
+	var sim2 := Sim.new()
+	var mine := sim2.spawn_unit(1, Vector2(0, 0), Sim.WORKER)
+	var foe := sim2.spawn_unit(2, Vector2(6, 0.5), Sim.WORKER)
+	sim2.issue_order(1, [mine.id], Vector2(12, 0), 0, Sim.MODE_ATTACK_MOVE)
+	_run(sim2, Sim.TICK_RATE * 4)
+	_check(foe.hp < foe.max_hp, "worker on attack-move hits an enemy it meets")
+	_check(not sim.issue_order(1, [s.id], Vector2.ZERO, 0, Sim.MODE_COUNT), "unknown mode rejected")
+
+
+func _test_stop_and_hold() -> void:
+	var sim := Sim.new()
+	var s := sim.spawn_unit(1, Vector2(0, 0), Sim.SOLDIER)
+	sim.issue_order(1, [s.id], Vector2(20, 0))
+	_run(sim, 10)
+	_check(sim.issue_order(1, [s.id], Vector2.ZERO, 0, Sim.MODE_STOP), "stop accepted")
+	var at := s.pos
+	_run(sim, Sim.TICK_RATE)
+	_check(not s.moving and s.pos.distance_to(at) < 0.01, "stop halts where it is")
+	# Hold: an enemy in sight but out of reach is left alone, and the
+	# soldier doesn't step off its spot.
+	var sim2 := Sim.new()
+	var h := sim2.spawn_unit(1, Vector2(0, 0), Sim.SOLDIER)
+	var near := sim2.spawn_unit(2, Vector2(3, 0), Sim.WORKER)
+	_check(sim2.issue_order(1, [h.id], Vector2.ZERO, 0, Sim.MODE_HOLD), "hold accepted")
+	_run(sim2, Sim.TICK_RATE * 3)
+	_check(h.pos.distance_to(Vector2.ZERO) < 0.1, "holding soldier stays put (at %s)" % h.pos)
+	_check(near.hp == near.max_hp, "holding soldier ignores an enemy out of reach")
+	near.pos = Vector2(1.2, 0)
+	near.prev_pos = near.pos
+	_run(sim2, Sim.TICK_RATE * 2)
+	_check(sim2.get_unit(near.id) == null or near.hp < near.max_hp, "holding soldier hits an enemy in reach")
+	_check(h.pos.distance_to(Vector2.ZERO) < 0.6, "and still holds its spot (at %s)" % h.pos)
 
 
 func _test_train_rejections() -> void:

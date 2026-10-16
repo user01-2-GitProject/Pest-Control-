@@ -55,7 +55,9 @@ func _test_roundtrip() -> void:
 	_check(m.get("reason") == Proto.REJECT_FULL, "reject roundtrip")
 	m = Proto.decode(Proto.order(77, [1, 2, 65535], Vector2(-3.5, 9.25), 300))
 	_check(m.get("seq") == 77 and m.ids == [1, 2, 65535] and m.target == Vector2(-3.5, 9.25)
-		and m.target_id == 300, "order roundtrip")
+		and m.target_id == 300 and m.mode == SimWorld.MODE_NORMAL, "order roundtrip")
+	m = Proto.decode(Proto.order(79, [4], Vector2(1, 2), 0, SimWorld.MODE_HOLD))
+	_check(m.get("type") == Proto.ORDER and m.mode == SimWorld.MODE_HOLD and m.ids == [4], "order mode roundtrip")
 	m = Proto.decode(Proto.train(78, SimWorld.SOLDIER))
 	_check(m.get("type") == Proto.TRAIN and m.seq == 78 and m.kind == SimWorld.SOLDIER, "train roundtrip")
 	m = Proto.decode(Proto.result(77, false, 999))
@@ -95,6 +97,7 @@ func _test_malformed_rejected() -> void:
 	_check(Proto.order(1, range(300), Vector2.ZERO).is_empty(), "too many ids not encoded")
 	_check(Proto.order(1, [70000], Vector2.ZERO).is_empty(), "id outside u16 not encoded")
 	_check(Proto.order(1, [1], Vector2.ZERO, 70000).is_empty(), "target id outside u16 not encoded")
+	_check(Proto.order(1, [1], Vector2.ZERO, 0, 256).is_empty(), "mode outside u8 not encoded")
 	# Random garbage never crashes and never decodes into a MOVE with bad length.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
@@ -104,7 +107,7 @@ func _test_malformed_rejected() -> void:
 		for j in junk.size():
 			junk[j] = rng.randi_range(0, 255)
 		var d := Proto.decode(junk)
-		if d.get("type") == Proto.ORDER and junk.size() != 16 + d.ids.size() * 2:
+		if d.get("type") == Proto.ORDER and junk.size() != 17 + d.ids.size() * 2:
 			_check(false, "garbage decoded as inconsistent ORDER")
 
 

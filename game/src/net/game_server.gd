@@ -224,7 +224,7 @@ func _on_command(from: int, msg: Dictionary) -> void:
 	elif msg.type == Protocol.RALLY:
 		sim.queue_rally(slot, msg.target, msg.target_id, msg.seq)
 	else:
-		sim.queue_order(slot, msg.ids, msg.target, msg.target_id, msg.seq)
+		sim.queue_order(slot, msg.ids, msg.target, msg.target_id, msg.seq, msg.mode)
 
 
 ## The slot this token owns, else a slot nobody owns yet, else 0.
