@@ -186,8 +186,10 @@ func _on_key(e: InputEventKey) -> void:
 	elif k == KEY_A:
 		attack_key.emit()
 	elif k == KEY_S:
+		cancel_targeting()  # S / H replace a pending attack-move.
 		stop_key.emit()
 	elif k == KEY_H:
+		cancel_targeting()
 		hold_key.emit()
 
 

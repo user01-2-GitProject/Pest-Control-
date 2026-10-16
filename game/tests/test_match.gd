@@ -154,6 +154,19 @@ func _test_attack_move() -> void:
 	_run(sim2, Sim.TICK_RATE * 4)
 	_check(foe.hp < foe.max_hp, "worker on attack-move hits an enemy it meets")
 	_check(not sim.issue_order(1, [s.id], Vector2.ZERO, 0, Sim.MODE_COUNT), "unknown mode rejected")
+	# An enemy that breaks the leash is dropped and the ant heads straight back
+	# to its destination, not to where the enemy was.
+	var sim3 := Sim.new()
+	var chaser := sim3.spawn_unit(1, Vector2(0, 0), Sim.SOLDIER)
+	var runner := sim3.spawn_unit(2, Vector2(4, 0), Sim.WORKER)
+	sim3.issue_order(1, [chaser.id], Vector2(0, 20), 0, Sim.MODE_ATTACK_MOVE)
+	_run(sim3, 2)
+	_check(chaser.engage == runner.id, "attack-move picks up the nearby enemy")
+	runner.pos = Vector2(Sim.LEASH_RANGE + 6.0, 0)
+	runner.prev_pos = runner.pos
+	_run(sim3, 1)
+	_check(chaser.engage == 0 and chaser.moving and chaser.target.distance_to(chaser.dest) < 0.01,
+		"leash break sends it back toward its destination")
 
 
 func _test_stop_and_hold() -> void:

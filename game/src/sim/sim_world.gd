@@ -638,6 +638,8 @@ func _fight_target(u: Unit) -> Object:
 		if e != null and u.pos.distance_to(e.pos) - e.radius <= LEASH_RANGE:
 			return e
 		u.engage = 0
+		if u.amove:
+			_go(u, u.dest)  # Chase over (dead or out of leash): back on course.
 	if u.task == Task.ATTACK:
 		var t: Object = _entities.get(u.task_target)
 		if t != null:
