@@ -29,7 +29,7 @@ extends RefCounted
 
 const MAGIC := 0x54534550  # "PEST"
 ## Bump on any wire change. Server rejects clients with a different version.
-const VERSION := 5
+const VERSION := 6
 const DEFAULT_PORT := 7777
 
 const HELLO := 1

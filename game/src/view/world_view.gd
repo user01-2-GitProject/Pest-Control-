@@ -1,7 +1,9 @@
 class_name WorldView
 extends Node3D
-## Flat forest-floor map: ground, light, environment and cosmetic clutter.
-## Clutter is visual only; it does not exist in the simulation.
+## Forest-floor map: ground, light, environment, the logs and rocks units
+## walk around, and cosmetic clutter. Logs and rocks come from
+## SimWorld.standard_obstacles, the same layout the simulation uses; clutter
+## is visual only and does not exist in the simulation.
 
 var half_size := Vector2(30, 30)
 
@@ -9,6 +11,7 @@ var half_size := Vector2(30, 30)
 func _ready() -> void:
 	_build_environment()
 	_build_ground()
+	_build_terrain()
 	_scatter(_pebble_mesh(), 70, Vector2(0.3, 0.9), 1)
 	_scatter(_leaf_mesh(), 45, Vector2(0.8, 1.8), 2)
 
@@ -44,6 +47,41 @@ func _build_ground() -> void:
 	ground.mesh = plane
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ground)
+
+
+func _build_terrain() -> void:
+	var bark := StandardMaterial3D.new()
+	bark.albedo_color = Color(0.36, 0.24, 0.14)
+	bark.roughness = 1.0
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.42, 0.41, 0.38)
+	stone.roughness = 0.9
+	for o in SimWorld.standard_obstacles(half_size):
+		var mi := MeshInstance3D.new()
+		if o.has("size"):
+			# A log lying along its long side, half sunk into the ground.
+			var size: Vector2 = o.size
+			var long_x := size.x > size.y
+			var c := CylinderMesh.new()
+			c.top_radius = minf(size.x, size.y) * 0.5
+			c.bottom_radius = c.top_radius
+			c.height = maxf(size.x, size.y)
+			c.radial_segments = 10
+			c.material = bark
+			mi.mesh = c
+			mi.rotation = Vector3(0, 0, PI / 2) if long_x else Vector3(PI / 2, 0, 0)
+			mi.position = Vector3(o.pos.x, c.top_radius * 0.6, o.pos.y)
+		else:
+			var r: float = o.radius
+			var sp := SphereMesh.new()
+			sp.radius = r
+			sp.height = r * 1.2
+			sp.radial_segments = 8
+			sp.rings = 4
+			sp.material = stone
+			mi.mesh = sp
+			mi.position = Vector3(o.pos.x, r * 0.25, o.pos.y)
+		add_child(mi)
 
 
 ## One MultiMesh per clutter type keeps it to a single draw call each.

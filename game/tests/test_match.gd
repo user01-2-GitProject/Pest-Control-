@@ -381,7 +381,7 @@ func _test_max_scale_battle() -> void:
 	var worst := 0
 	var total := 0
 	var ticks := 0
-	while ticks < Sim.TICK_RATE * 60 and sim.winner == 0 and sim.unit_count(1) > 0 and sim.unit_count(2) > 0:
+	while ticks < Sim.TICK_RATE * 90 and sim.winner == 0 and sim.unit_count(1) > 0 and sim.unit_count(2) > 0:
 		var s := Time.get_ticks_usec()
 		sim.step()
 		var e := Time.get_ticks_usec() - s
@@ -396,6 +396,6 @@ func _test_max_scale_battle() -> void:
 			overlap = maxf(overlap, a.radius + b.radius - a.pos.distance_to(b.pos))
 	print("  50v50 battle: %d ticks, %.3f ms/tick avg, %.2f ms worst, left %d v %d, winner %d (CI machine)" %
 		[ticks, total / 1000.0 / ticks, worst / 1000.0, sim.unit_count(1), sim.unit_count(2), sim.winner])
-	_check(sim.unit_count(1) == 0 or sim.unit_count(2) == 0 or sim.winner != 0, "battle resolves within 60 s")
+	_check(sim.unit_count(1) == 0 or sim.unit_count(2) == 0 or sim.winner != 0, "battle resolves within 90 s")
 	_check(overlap < 0.15, "no deep overlap after battle (%.3f m)" % overlap)
 	_check(total / 1000.0 / ticks < 10.0, "average tick under 10 ms on CI")
