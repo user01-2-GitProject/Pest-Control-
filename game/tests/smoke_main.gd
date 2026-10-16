@@ -201,6 +201,11 @@ func _check_unit_orders(main: Node) -> int:
 	if pc.targeting:
 		printerr("FAIL: right click should cancel targeting")
 		fails += 1
+	pc._unhandled_input(_key(KEY_A, true))
+	pc._unhandled_input(_key(KEY_S, true))
+	if pc.targeting:
+		printerr("FAIL: S after A should end targeting")
+		fails += 1
 	var col: Vector2 = main.sim.colonies[main.local_player].pos
 	var spot := col + Vector2(8, 0)
 	var sp: Vector2 = main.rig.world_to_screen(Vector3(spot.x, 0.0, spot.y))
