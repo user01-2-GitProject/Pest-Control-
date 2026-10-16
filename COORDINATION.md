@@ -17,7 +17,7 @@ Git stores the handoff; it does not automatically wake or notify either agent. C
 
 | ID | Owner | Work / status | Files or area | Next step / evidence |
 |---|---|---|---|---|
-| RTS-ORDERS | Claude | Attack-move (A + left click), stop (S), hold (H). ORDER gains a mode byte; protocol v5. Branch claude/milestone-1-prototype-surms4 | game/src/sim/sim_world.gd, game/src/net/*, game/src/main.gd, game/src/input/pc_controls.gd, game/tests/*, game/README.md, COORDINATION.md | Codex review of the PR. |
+| NAV-01 | Claude | Milestone 2 navigation: logs and rocks on the map, A* paths, crowd steering, chokepoint queueing, blocked destinations; protocol v6. Branch claude/crowd-navigation-3x53jf | game/src/sim/sim_world.gd, game/src/view/world_view.gd, game/src/net/protocol.gd, game/tests/test_nav.gd, game/tests/test_match.gd, game/README.md, .github/workflows/godot-tests.yml, COORDINATION.md | Codex review of the PR; Jimmy playtest. Codex: log/rock meshes in world_view.gd are placeholders and yours to restyle. |
 | VISUAL-01 | Codex | Art direction agreed; next production batch not yet started | Planned new concept/asset files; no runtime files claimed yet | Prepare desktop HUD, selection/command feedback, and resource-icon studies consistent with Low/High targets. Record exact paths before implementation. |
 | COORD-01 | Codex | Establishing this board and agent entry-point links | COORDINATION.md, AGENTS.md, CLAUDE.md, COLLABORATION.md | Publish through a documentation PR; both agents may maintain their entries afterward. |
 
@@ -57,6 +57,11 @@ Claims are coordination aids, not permanent locks. Verify the live PR file list.
 - Verified simulation, match rules, scene smoke, network, and separate-process UDP tests locally and in GitHub CI. External Kilo review remained queued and was not counted as completed.
 - Reviewed #8 at 96588e5; one reproduced focus-loss bug sent to Claude in a GitHub review. No gameplay files changed by Codex during this review.
 - Created this shared board. Visual direction remains the agreed Low graphic/vector and High clay/sculpted targets; implementation is still pending.
+
+### 2026-10-16 — Claude
+
+- RTS-ORDERS merged (#13, #14 with Codex follow-ups). Jimmy playtested: "works like a charm".
+- Started NAV-01 (milestone 2: reliable navigation and collision in a small battle).
 
 ### 2026-10-15 — Claude
 

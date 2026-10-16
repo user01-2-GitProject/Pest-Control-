@@ -99,6 +99,7 @@ cd game
 godot --headless --import
 godot --headless -s res://tests/test_sim.gd
 godot --headless -s res://tests/test_match.gd
+godot --headless -s res://tests/test_nav.gd
 godot --headless -s res://tests/smoke_main.gd
 godot --headless -s res://tests/test_net.gd
 ```
@@ -106,9 +107,33 @@ godot --headless -s res://tests/test_net.gd
 CI also runs a dedicated server and two `tests/net_bot.gd` clients as three
 separate processes over UDP; see `.github/workflows/godot-tests.yml`.
 
+## Movement and collision
+
+The standard map has two logs across the middle (a 4 m chokepoint between
+them, lanes past each end), a big rock in each outer lane and a rock in front
+of each colony. `SimWorld.standard_obstacles` defines them once; the server
+simulates them and every client draws them from the same list.
+
+- **Paths.** A move whose straight line is clear walks straight (no cost).
+  Otherwise A* runs on a 1 m grid (`AStarGrid2D`, obstacles grown by 0.65 m so
+  the biggest ant fits), and the path is string-pulled to a few waypoints.
+- **Blocked destinations.** A click on a log or rock moves the point to the
+  nearest open ground; formation slots that land on terrain move to the
+  nearest free cell. A walled-off target settles for the closest reachable point.
+- **Crowds.** Ants steer around friends just ahead that are not walking the
+  same way, passing on the right when head-on. Overlaps and terrain are
+  resolved every tick (3 passes, up to 8 for ants still jammed). Idle ants
+  make room for moving ones, but a jammed mover stops shoving and slows down.
+- **No deadlock.** An ant pressed against moving friends waits up to 5 s;
+  one blocked outright re-plans twice, then stops where it is.
+- **Tests.** `tests/test_nav.gd`: routing round a log, ordering onto a log,
+  30 ants through the chokepoint, two 15-ant crowds swapping sides through it,
+  and a 50 v 50 attack-move battle on the standard map (no ant ever inside a
+  log or rock, settled overlap, average tick time).
+
 ## Networking model
 
-Protocol v5 combines match commands (including rally points and order modes) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
+Protocol v6 (v6: the map now has logs and rocks) combines match commands (including rally points and order modes) with token-based rejoin, rate limits, and host notices. Older clients are rejected and must update.
 
 - **Server-authoritative.** Clients send only intent: `ORDER` (unit ids, target
   point, optional target id, mode: normal / attack-move / stop / hold), `TRAIN` (kind) and `RALLY` (point, optional
@@ -136,8 +161,9 @@ Protocol v5 combines match commands (including rally points and order modes) wit
 
 - This is an unfinished Ants-only prototype, not the complete RTS.
 - No minimap or patrol yet. W A S D panning is off (Jimmy: W A S D are unit hotkeys, standard RTS layout; pan with Space + mouse or the screen edge). `PAN_WITH_WASD` in `pc_controls.gd` turns it back on, but then A and S stop working as hotkeys.
-- No Biomass/culling, player-built structures, other factions, terrain pathfinding, fog of war, or finished art yet.
-- Movement is straight-line plus overlap push and colony collision; there is no obstacle navigation.
+- No Biomass/culling, player-built structures, other factions, fog of war, or finished art yet.
+- One fixed map. Colonies are pushed out of like terrain but are not in the path grid, so ants slide round a mound rather than plan round it.
+- A 100-ant melee packed into the chokepoint still squeezes ants together for moments (up to ~0.6 m overlap at the worst tick, measured headless); it clears once the press eases.
 - No prediction: online commands are visible after roughly 100 ms interpolation plus network latency.
 - Tokens protect reserved slots but are not account authentication. Desktop tokens currently live for one client instance; restarting the app cannot recover its old slot. LAN only; do not expose this server publicly.
 - The match continues after a disconnect. No surrender or reconnect UI yet.
